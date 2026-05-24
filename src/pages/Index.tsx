@@ -15,9 +15,9 @@ const API = {
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Role = "select" | "client" | "manager";
 
-interface SessionUser { token: string; name: string; email: string; role: string; client_id?: number; }
+interface SessionUser { token: string; name: string; email: string; role: string; client_id?: number; is_admin?: boolean; }
 
-type ManagerSection = "dashboard" | "bookings" | "create" | "clients" | "messages" | "my-contacts";
+type ManagerSection = "dashboard" | "bookings" | "create" | "clients" | "messages" | "my-contacts" | "team";
 
 type Section =
   | "booking"
@@ -1380,8 +1380,205 @@ function ManagerClients() {
   );
 }
 
+// ─── Manager Team (только для admin) ─────────────────────────────────────────
+interface ManagerRecord { id: number; name: string; email: string; is_admin: boolean; is_active: boolean; created_at: string; }
+
+function ManagerTeam({ token }: { token: string }) {
+  const [managers, setManagers] = useState<ManagerRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviting, setInviting] = useState(false);
+  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    fetch(API.authManager, {
+      method: "POST",
+      body: JSON.stringify({ action: "list-managers" }),
+      headers: { "X-Auth-Token": token },
+    })
+      .then(r => r.json())
+      .then(d => setManagers(d.managers || []))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleInvite = async () => {
+    if (!inviteEmail || !inviteName) { setMsg({ type: "err", text: "Заполните имя и email" }); return; }
+    setInviting(true); setMsg(null);
+    try {
+      const res = await fetch(API.authManager, {
+        method: "POST",
+        body: JSON.stringify({ action: "invite-manager", email: inviteEmail, name: inviteName }),
+        headers: { "X-Auth-Token": token },
+      });
+      const data = await res.json();
+      if (!res.ok) { setMsg({ type: "err", text: data.error || "Ошибка" }); return; }
+      setMsg({ type: "ok", text: `Приглашение отправлено на ${inviteEmail}` });
+      setInviteEmail(""); setInviteName("");
+      load();
+    } catch { setMsg({ type: "err", text: "Ошибка соединения" }); }
+    finally { setInviting(false); }
+  };
+
+  const handleToggle = async (id: number) => {
+    await fetch(API.authManager, {
+      method: "POST",
+      body: JSON.stringify({ action: "toggle-manager", manager_id: id }),
+      headers: { "X-Auth-Token": token },
+    });
+    load();
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="ocean-card rounded-2xl p-6 space-y-4">
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Пригласить менеджера</h3>
+        <p className="text-sm text-muted-foreground">Менеджер получит письмо с кодом для создания аккаунта</p>
+        {msg && (
+          <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm border animate-fade-in ${msg.type === "ok" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+            <Icon name={msg.type === "ok" ? "CheckCircle" : "AlertCircle"} size={15} />
+            {msg.text}
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5">Имя менеджера</label>
+            <input className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)]"
+              placeholder="Мария Иванова" value={inviteName} onChange={e => setInviteName(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5">Email</label>
+            <input type="email" className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)]"
+              placeholder="maria@abeona.club" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} />
+          </div>
+        </div>
+        <button onClick={handleInvite} disabled={inviting}
+          className="w-full bg-[hsl(213,70%,28%)] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+          {inviting ? <Icon name="Loader" size={15} className="animate-spin" /> : <Icon name="Send" size={15} />}
+          {inviting ? "Отправляем..." : "Отправить приглашение"}
+        </button>
+      </div>
+
+      <div className="ocean-card rounded-2xl p-5">
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)] mb-4">Команда</h3>
+        {loading ? (
+          <div className="py-8 text-center"><Icon name="Loader" size={24} className="animate-spin mx-auto text-muted-foreground" /></div>
+        ) : (
+          <div className="space-y-3">
+            {managers.map((m, idx) => (
+              <div key={m.id} className={`flex items-center gap-4 p-4 rounded-xl border transition-all animate-fade-in ${m.is_active ? "bg-white border-blue-100" : "bg-gray-50 border-gray-200 opacity-60"}`}
+                style={{ animationDelay: `${idx * 0.06}s` }}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 ${m.is_admin ? "bg-[hsl(45,85%,55%)] text-[hsl(213,80%,15%)]" : "bg-[hsl(213,70%,28%)] text-white"}`}>
+                  {m.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-sm text-[hsl(213,80%,15%)]">{m.name}</p>
+                    {m.is_admin && <span className="text-[10px] bg-[hsl(45,85%,90%)] text-[hsl(38,75%,35%)] border border-[hsl(45,85%,70%)] px-2 py-0.5 rounded-full font-semibold">Главный</span>}
+                    {!m.is_active && <span className="text-[10px] bg-gray-100 text-gray-500 border border-gray-300 px-2 py-0.5 rounded-full">Отключён</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{m.email}</p>
+                </div>
+                {!m.is_admin && (
+                  <button onClick={() => handleToggle(m.id)}
+                    className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors ${m.is_active ? "border-red-200 text-red-600 hover:bg-red-50" : "border-emerald-200 text-emerald-600 hover:bg-emerald-50"}`}>
+                    {m.is_active ? "Отключить" : "Включить"}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Accept Invite Screen ─────────────────────────────────────────────────────
+function AcceptInviteScreen({ onSuccess }: { onSuccess: (user: SessionUser) => void }) {
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleAccept = async () => {
+    if (!email || !code || !name || !password) { setError("Заполните все поля"); return; }
+    if (password.length < 8) { setError("Пароль минимум 8 символов"); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(API.authManager, {
+        method: "POST",
+        body: JSON.stringify({ action: "accept-invite", email, code, name, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Неверный код или email"); return; }
+      localStorage.setItem("yc_token", data.token);
+      localStorage.setItem("yc_role", "manager");
+      onSuccess({ ...data, role: "manager" });
+    } catch { setError("Ошибка соединения"); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="min-h-screen wave-bg flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none opacity-10">
+        <svg viewBox="0 0 1440 200" className="absolute bottom-0 w-full" fill="white" preserveAspectRatio="none">
+          <path d="M0,80 C360,140 720,20 1080,80 C1260,110 1380,50 1440,80 L1440,200 L0,200 Z" />
+        </svg>
+      </div>
+      <div className="relative z-10 w-full max-w-md animate-fade-in">
+        <div className="text-center mb-8">
+          <img src={LOGO_URL} alt="Abeona Club" className="w-24 h-24 object-contain mx-auto mb-3 drop-shadow-lg" />
+          <p className="text-blue-200 text-sm">Активация аккаунта менеджера</p>
+        </div>
+        <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-8 shadow-2xl">
+          <h2 className="font-display text-2xl font-semibold text-[hsl(213,80%,15%)] mb-2">Добро пожаловать в команду!</h2>
+          <p className="text-sm text-muted-foreground mb-6">Введите код из письма и создайте свой пароль</p>
+          {error && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm mb-4 animate-fade-in">
+              <Icon name="AlertCircle" size={15} className="flex-shrink-0" />{error}
+            </div>
+          )}
+          <div className="space-y-4">
+            {[
+              { label: "Ваше имя", key: "name", val: name, set: setName, ph: "Мария Иванова", type: "text" },
+              { label: "Email (на который пришло приглашение)", key: "email", val: email, set: setEmail, ph: "maria@abeona.club", type: "email" },
+            ].map(f => (
+              <div key={f.key}>
+                <label className="block text-xs font-medium text-muted-foreground mb-1.5">{f.label}</label>
+                <input type={f.type} className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)]"
+                  placeholder={f.ph} value={f.val} onChange={e => f.set(e.target.value)} />
+              </div>
+            ))}
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Код приглашения (из письма)</label>
+              <input className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm font-bold uppercase tracking-widest text-center outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)]"
+                placeholder="XXXXXXXXXXXX" maxLength={12} value={code} onChange={e => setCode(e.target.value.toUpperCase())} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Придумайте пароль</label>
+              <input type="password" className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)]"
+                placeholder="Минимум 8 символов" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleAccept()} />
+            </div>
+            <button onClick={handleAccept} disabled={loading}
+              className="w-full bg-[hsl(213,70%,28%)] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors disabled:opacity-60 flex items-center justify-center gap-2 mt-2">
+              {loading ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="CheckCircle" size={16} />}
+              {loading ? "Создаём аккаунт..." : "Создать аккаунт"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Manager Panel ────────────────────────────────────────────────────────────
-const managerNavItems: { id: ManagerSection; label: string; icon: string; badge?: number }[] = [
+const managerNavItemsBase: { id: ManagerSection; label: string; icon: string; badge?: number }[] = [
   { id: "dashboard", label: "Дашборд", icon: "LayoutDashboard" },
   { id: "bookings", label: "Бронирования", icon: "CalendarCheck", badge: managerBookings.filter(b => b.status === "new").length },
   { id: "create", label: "Новое бронирование", icon: "Plus" },
@@ -1397,6 +1594,7 @@ const managerSectionTitles: Record<ManagerSection, string> = {
   clients: "Клиенты",
   messages: "Сообщения",
   "my-contacts": "Мои контакты",
+  team: "Команда менеджеров",
 };
 
 // ─── Manager: Edit My Contacts ────────────────────────────────────────────────
@@ -1490,11 +1688,16 @@ function ManagerMyContacts() {
   );
 }
 
-function ManagerPanel({ onLogout, managerName }: { onLogout: () => void; managerName?: string }) {
+function ManagerPanel({ onLogout, managerName, isAdmin, token }: { onLogout: () => void; managerName?: string; isAdmin?: boolean; token?: string; }) {
   const [activeSection, setActiveSection] = useState<ManagerSection>("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const displayName = managerName || "Менеджер";
   const initials = displayName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+
+  const managerNavItems = [
+    ...managerNavItemsBase,
+    ...(isAdmin ? [{ id: "team" as ManagerSection, label: "Команда", icon: "ShieldCheck" }] : []),
+  ];
 
   const renderSection = () => {
     switch (activeSection) {
@@ -1504,6 +1707,7 @@ function ManagerPanel({ onLogout, managerName }: { onLogout: () => void; manager
       case "clients": return <ManagerClients />;
       case "messages": return <MessagesSection />;
       case "my-contacts": return <ManagerMyContacts />;
+      case "team": return <ManagerTeam token={token || ""} />;
       default: return <ManagerDashboard setSection={setActiveSection} />;
     }
   };
@@ -1521,7 +1725,7 @@ function ManagerPanel({ onLogout, managerName }: { onLogout: () => void; manager
             <div className="w-8 h-8 rounded-full bg-[hsl(45,85%,55%)] flex items-center justify-center text-[hsl(213,80%,15%)] text-xs font-bold flex-shrink-0">{initials}</div>
             <div>
               <p className="text-white text-sm font-semibold">{displayName}</p>
-              <p className="text-blue-300 text-xs">Менеджер</p>
+              <p className="text-[hsl(45,85%,65%)] text-xs">{isAdmin ? "Главный менеджер" : "Менеджер"}</p>
             </div>
           </div>
         </div>
@@ -1705,7 +1909,7 @@ const sectionTitles: Record<Section, string> = {
   routes: "Маршруты",
 };
 
-type AppScreen = "role-select" | "manager-login" | "client-login" | "client-bookings" | "client-cabinet" | "manager-panel";
+type AppScreen = "role-select" | "manager-login" | "client-login" | "client-bookings" | "client-cabinet" | "manager-panel" | "accept-invite";
 
 const Index = () => {
   const [screen, setScreen] = useState<AppScreen>("role-select");
@@ -1724,7 +1928,7 @@ const Index = () => {
           if (r.ok) {
             return r.json().then(data => {
               if (role === "manager") {
-                setUser({ token, name: data.name || "", email: data.email || "", role: "manager" });
+                setUser({ token, name: data.name || "", email: data.email || "", role: "manager", is_admin: data.is_admin });
                 setScreen("manager-panel");
               } else {
                 setUser({ token, name: "", email: "", role: "client" });
@@ -1789,11 +1993,18 @@ const Index = () => {
           </div>
         </button>
       </div>
+      <button
+        onClick={() => setScreen("accept-invite")}
+        className="relative z-10 mt-5 text-blue-300 text-sm hover:text-white transition-colors flex items-center gap-1.5 mx-auto"
+      >
+        <Icon name="Mail" size={14} />
+        Получили приглашение? Активировать аккаунт
+      </button>
     </div>
   );
 
   if (screen === "manager-login") return (
-    <ManagerLoginScreen onSuccess={u => { setUser(u); setScreen("manager-panel"); }} />
+    <ManagerLoginScreen onSuccess={u => { setUser({ ...u, is_admin: u.is_admin }); setScreen("manager-panel"); }} />
   );
 
   if (screen === "client-login") return (
@@ -1815,8 +2026,17 @@ const Index = () => {
     />
   );
 
+  if (screen === "accept-invite") return (
+    <AcceptInviteScreen onSuccess={u => { setUser(u); setScreen("manager-panel"); }} />
+  );
+
   if (screen === "manager-panel") return (
-    <ManagerPanel onLogout={logout} managerName={user?.name} />
+    <ManagerPanel
+      onLogout={logout}
+      managerName={user?.name}
+      isAdmin={user?.is_admin}
+      token={user?.token}
+    />
   );
 
   return null;

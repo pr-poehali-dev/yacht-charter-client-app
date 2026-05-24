@@ -40,14 +40,12 @@ def json_response(status: int, body) -> dict:
 def resolve_session(token: str, conn) -> dict | None:
     """
     Проверяет токен сессии в таблице sessions.
-    Возвращает словарь с полями role, manager_id/client_id или None если сессия не действительна.
+    Возвращает словарь с полями role, user_id или None если сессия не действительна.
     """
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT role, manager_id, client_id, expires_at
-        FROM sessions
-        WHERE token = %s
+        SELECT role, user_id, expires_at FROM sessions WHERE token = %s
         """,
         [token],
     )
@@ -57,7 +55,7 @@ def resolve_session(token: str, conn) -> dict | None:
     if row is None:
         return None
 
-    role, manager_id, client_id, expires_at = row
+    role, user_id, expires_at = row
 
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
@@ -65,13 +63,14 @@ def resolve_session(token: str, conn) -> dict | None:
     if datetime.now(timezone.utc) > expires_at:
         return None
 
-    return {"role": role, "manager_id": manager_id, "client_id": client_id}
+    return {"role": role, "user_id": user_id}
 
 
 def handle_get_bookings(session: dict, conn) -> dict:
     """
     Возвращает список бронирований.
-    Клиент получает только свои бронирования, менеджер — все.
+    Клиент получает только свои бронирования.
+    Менеджер-администратор видит все, обычный менеджер — только созданные им.
     """
     cur = conn.cursor()
 
@@ -97,10 +96,21 @@ def handle_get_bookings(session: dict, conn) -> dict:
         LEFT JOIN clients c ON c.id = b.client_id
     """
 
-    if session["role"] == "client":
-        cur.execute(base_query + " WHERE b.client_id = %s ORDER BY b.date_from DESC", [session["client_id"]])
+    role = session["role"]
+    user_id = session["user_id"]
+
+    if role == "client":
+        cur.execute(base_query + " WHERE b.client_id = %s ORDER BY b.date_from DESC", [user_id])
     else:
-        cur.execute(base_query + " ORDER BY b.date_from DESC")
+        # Проверяем is_admin у менеджера
+        cur.execute("SELECT is_admin FROM managers WHERE id = %s", [user_id])
+        manager_row = cur.fetchone()
+        is_admin = manager_row[0] if manager_row else False
+
+        if is_admin:
+            cur.execute(base_query + " ORDER BY b.date_from DESC")
+        else:
+            cur.execute(base_query + " WHERE b.created_by = %s ORDER BY b.date_from DESC", [user_id])
 
     rows = cur.fetchall()
     columns = [desc[0] for desc in cur.description]
@@ -110,7 +120,7 @@ def handle_get_bookings(session: dict, conn) -> dict:
     return json_response(200, bookings)
 
 
-def handle_create_booking(body: dict, conn) -> dict:
+def handle_create_booking(body: dict, session: dict, conn) -> dict:
     """
     Создаёт новое бронирование яхты.
     Доступно только менеджерам. Возвращает созданную запись.
@@ -134,6 +144,7 @@ def handle_create_booking(body: dict, conn) -> dict:
     length = body.get("length")
     engine = body.get("engine")
     notes = body.get("notes")
+    created_by = body.get("manager_id") or session.get("user_id")
 
     cur = conn.cursor()
     cur.execute(
@@ -141,21 +152,21 @@ def handle_create_booking(body: dict, conn) -> dict:
         INSERT INTO bookings (
             client_id, yacht_name, yacht_type, marina, country,
             date_from, date_to, status, captain, cabins, berths,
-            length, engine, notes
+            length, engine, notes, created_by
         ) VALUES (
             %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s,
-            %s, %s, %s
+            %s, %s, %s, %s
         )
         RETURNING
             id, yacht_name, yacht_type, marina, country,
             date_from, date_to, status, captain, cabins, berths,
-            length, engine, notes, client_id
+            length, engine, notes, client_id, created_by
         """,
         [
             client_id, yacht_name, yacht_type, marina, country,
             date_from, date_to, status, captain, cabins, berths,
-            length, engine, notes,
+            length, engine, notes, created_by,
         ],
     )
     row = cur.fetchone()
@@ -181,7 +192,7 @@ def handler(event, context):
       POST / — создание бронирования (только менеджер)
     Требует заголовок X-Auth-Token с действующим токеном сессии.
     """
-    method = event.get("method", "GET").upper()
+    method = (event.get("httpMethod") or event.get("method") or "GET").upper()
     path = event.get("path", "/").rstrip("/") or "/"
     headers = event.get("headers") or {}
 
@@ -222,7 +233,7 @@ def handler(event, context):
             else:
                 body = raw_body
 
-            return handle_create_booking(body, conn)
+            return handle_create_booking(body, session, conn)
 
         return json_response(404, {"error": "Маршрут не найден"})
 

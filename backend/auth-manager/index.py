@@ -143,11 +143,13 @@ def handle_me(headers: dict) -> dict:
 
 
 def send_email(to_email: str, subject: str, html_body: str):
-    """Отправляет email через SMTP."""
+    """Отправляет email через SMTP — поддерживает SSL (465) и STARTTLS (587)."""
     smtp_host = os.environ.get("SMTP_HOST", "")
     smtp_port = int(os.environ.get("SMTP_PORT", "465"))
     smtp_user = os.environ.get("SMTP_USER", "")
     smtp_pass = os.environ.get("SMTP_PASSWORD", "")
+
+    print(f"[SMTP] host={smtp_host} port={smtp_port} user={smtp_user} to={to_email}")
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -156,9 +158,17 @@ def send_email(to_email: str, subject: str, html_body: str):
     msg.attach(MIMEText(html_body, "html"))
 
     context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context) as server:
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, to_email, msg.as_string())
+    if smtp_port == 587:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, to_email, msg.as_string())
+    else:
+        with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context) as server:
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(smtp_user, to_email, msg.as_string())
+    print(f"[SMTP] Email sent successfully to {to_email}")
 
 
 def handle_forgot_password(body: dict) -> dict:
@@ -215,6 +225,8 @@ def handle_forgot_password(body: dict) -> dict:
         return json_response(200, {"sent": True})
 
     except Exception as e:
+        import traceback
+        print(f"[forgot-password ERROR] {str(e)}\n{traceback.format_exc()}")
         if conn: conn.rollback()
         return json_response(500, {"error": str(e)})
     finally:
@@ -345,6 +357,25 @@ def handler(event, context):
 
     if path == "/forgot-password" or (action == "forgot-password"):
         return handle_forgot_password(body)
+
+    if path == "/test-smtp" or (action == "test-smtp"):
+        try:
+            smtp_host = os.environ.get("SMTP_HOST", "NOT SET")
+            smtp_port = int(os.environ.get("SMTP_PORT", "0"))
+            smtp_user = os.environ.get("SMTP_USER", "NOT SET")
+            smtp_pass_set = bool(os.environ.get("SMTP_PASSWORD", ""))
+            import smtplib, ssl as ssl_mod
+            context = ssl_mod.create_default_context()
+            if smtp_port == 587:
+                s = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+                s.ehlo(); s.starttls(context=context); s.login(smtp_user, os.environ.get("SMTP_PASSWORD", "")); s.quit()
+            else:
+                s = smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=10)
+                s.login(smtp_user, os.environ.get("SMTP_PASSWORD", "")); s.quit()
+            return json_response(200, {"ok": True, "host": smtp_host, "port": smtp_port, "user": smtp_user, "pass_set": smtp_pass_set})
+        except Exception as e:
+            import traceback
+            return json_response(200, {"ok": False, "error": str(e), "trace": traceback.format_exc(), "host": os.environ.get("SMTP_HOST",""), "port": os.environ.get("SMTP_PORT",""), "user": os.environ.get("SMTP_USER","")})
 
     if path == "/reset-password" or (action == "reset-password"):
         return handle_reset_password(body)

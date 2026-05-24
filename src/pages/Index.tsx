@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 
+// ─── Brand ───────────────────────────────────────────────────────────────────
+const LOGO_URL = "https://cdn.poehali.dev/projects/cfd2a8a4-eb7e-4847-9fbc-3fbbbec5963a/bucket/be2eb5ba-e2db-4c10-993e-8afc42049268.png";
+
 // ─── API URLs ─────────────────────────────────────────────────────────────────
 const API = {
   authManager: "https://functions.poehali.dev/c97bf12a-5428-4ee6-8007-744b50b22d45",
@@ -14,7 +17,7 @@ type Role = "select" | "client" | "manager";
 
 interface SessionUser { token: string; name: string; email: string; role: string; client_id?: number; }
 
-type ManagerSection = "dashboard" | "bookings" | "create" | "clients" | "messages";
+type ManagerSection = "dashboard" | "bookings" | "create" | "clients" | "messages" | "my-contacts";
 
 type Section =
   | "booking"
@@ -24,7 +27,8 @@ type Section =
   | "messages"
   | "marina"
   | "reminders"
-  | "routes";
+  | "routes"
+  | "contacts";
 
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 const booking = {
@@ -105,6 +109,28 @@ const marina = {
   ],
 };
 
+// ─── Manager Contacts (shared state via localStorage) ────────────────────────
+const DEFAULT_MANAGER_CONTACTS = {
+  name: "Елена Морская",
+  position: "Менеджер по яхтенному чартеру",
+  phone: "+7 916 000-00-00",
+  whatsapp: "+79160000000",
+  telegram: "@elena_yacht",
+  email: "elena@abeonaclub.ru",
+  bio: "Помогу с любым вопросом по вашему рейсу. Пишите в любое время!",
+};
+
+function getManagerContacts() {
+  try {
+    const stored = localStorage.getItem("yc_manager_contacts");
+    return stored ? { ...DEFAULT_MANAGER_CONTACTS, ...JSON.parse(stored) } : DEFAULT_MANAGER_CONTACTS;
+  } catch { return DEFAULT_MANAGER_CONTACTS; }
+}
+
+function saveManagerContacts(data: typeof DEFAULT_MANAGER_CONTACTS) {
+  localStorage.setItem("yc_manager_contacts", JSON.stringify(data));
+}
+
 // ─── Manager Mock Data ────────────────────────────────────────────────────────
 const managerBookings = [
   { id: 1, client: "Дмитрий Орлов", yacht: "Beneteau Oceanis 51.1", marina: "ACI Split", dateFrom: "14 июл", dateTo: "21 июл", status: "confirmed", paid: 4700, total: 10150, crew: 4 },
@@ -127,6 +153,7 @@ const navItems: { id: Section; label: string; icon: string; badge?: number }[] =
   { id: "documents", label: "Документы", icon: "FileText" },
   { id: "payments", label: "Платежи", icon: "CreditCard", badge: 1 },
   { id: "messages", label: "Сообщения", icon: "MessageCircle", badge: 1 },
+  { id: "contacts", label: "Контакты менеджера", icon: "ContactRound" },
   { id: "marina", label: "Марина", icon: "MapPin" },
   { id: "reminders", label: "Напоминания", icon: "Bell", badge: 5 },
   { id: "routes", label: "Маршруты", icon: "Navigation" },
@@ -545,6 +572,115 @@ function RoutesSection() {
   );
 }
 
+// ─── Contacts Section (клиент) ────────────────────────────────────────────────
+function ContactsSection() {
+  const [contacts, setContacts] = useState(getManagerContacts());
+
+  useEffect(() => {
+    const handleFocus = () => setContacts(getManagerContacts());
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      {/* Карточка менеджера */}
+      <div className="wave-bg rounded-2xl p-6 text-white relative overflow-hidden">
+        <div className="flex items-center gap-5">
+          <div className="w-16 h-16 rounded-full bg-white/20 border-2 border-white/30 flex items-center justify-center text-2xl font-display font-semibold flex-shrink-0">
+            {contacts.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2)}
+          </div>
+          <div>
+            <p className="text-blue-200 text-xs uppercase tracking-widest mb-0.5">Ваш менеджер</p>
+            <h2 className="font-display text-2xl font-semibold">{contacts.name}</h2>
+            <p className="text-blue-200 text-sm mt-0.5">{contacts.position}</p>
+          </div>
+        </div>
+        {contacts.bio && (
+          <p className="mt-4 text-blue-100 text-sm leading-relaxed bg-white/10 rounded-xl px-4 py-3 border border-white/15">
+            {contacts.bio}
+          </p>
+        )}
+      </div>
+
+      {/* Кнопки быстрого контакта */}
+      <div className="grid grid-cols-1 gap-3">
+        {contacts.whatsapp && (
+          <a
+            href={`https://wa.me/${contacts.whatsapp.replace(/\D/g, "")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-4 ocean-card rounded-2xl p-5 hover:shadow-md transition-shadow group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-[#25D366] flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-[hsl(213,80%,15%)]">WhatsApp</p>
+              <p className="text-sm text-muted-foreground">{contacts.whatsapp}</p>
+            </div>
+            <Icon name="ArrowRight" size={16} className="text-muted-foreground group-hover:translate-x-1 transition-transform" />
+          </a>
+        )}
+
+        {contacts.telegram && (
+          <a
+            href={`https://t.me/${contacts.telegram.replace("@", "")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-4 ocean-card rounded-2xl p-5 hover:shadow-md transition-shadow group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-[#2AABEE] flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-[hsl(213,80%,15%)]">Telegram</p>
+              <p className="text-sm text-muted-foreground">{contacts.telegram}</p>
+            </div>
+            <Icon name="ArrowRight" size={16} className="text-muted-foreground group-hover:translate-x-1 transition-transform" />
+          </a>
+        )}
+
+        {contacts.phone && (
+          <a
+            href={`tel:${contacts.phone}`}
+            className="flex items-center gap-4 ocean-card rounded-2xl p-5 hover:shadow-md transition-shadow group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-[hsl(213,70%,28%)] flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+              <Icon name="Phone" size={20} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-[hsl(213,80%,15%)]">Телефон</p>
+              <p className="text-sm text-muted-foreground">{contacts.phone}</p>
+            </div>
+            <Icon name="ArrowRight" size={16} className="text-muted-foreground group-hover:translate-x-1 transition-transform" />
+          </a>
+        )}
+
+        {contacts.email && (
+          <a
+            href={`mailto:${contacts.email}`}
+            className="flex items-center gap-4 ocean-card rounded-2xl p-5 hover:shadow-md transition-shadow group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-[hsl(199,65%,45%)] flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+              <Icon name="Mail" size={20} className="text-white" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-[hsl(213,80%,15%)]">Email</p>
+              <p className="text-sm text-muted-foreground">{contacts.email}</p>
+            </div>
+            <Icon name="ArrowRight" size={16} className="text-muted-foreground group-hover:translate-x-1 transition-transform" />
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Auth: Manager Login ──────────────────────────────────────────────────────
 function ManagerLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => void }) {
   const [email, setEmail] = useState("");
@@ -582,10 +718,7 @@ function ManagerLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => v
       </div>
       <div className="relative z-10 w-full max-w-md animate-fade-in">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-[hsl(45,85%,55%)] flex items-center justify-center mx-auto mb-4">
-            <Icon name="Anchor" size={26} className="text-[hsl(213,80%,15%)]" />
-          </div>
-          <h1 className="font-display text-4xl font-semibold text-white mb-1">YachtCharter</h1>
+          <img src={LOGO_URL} alt="Abeona Club" className="w-24 h-24 object-contain mx-auto mb-3 drop-shadow-lg" />
           <p className="text-blue-200 text-sm">Вход для менеджеров</p>
         </div>
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-8 shadow-2xl">
@@ -694,10 +827,7 @@ function ClientLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => vo
       </div>
       <div className="relative z-10 w-full max-w-md animate-fade-in">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-[hsl(45,85%,55%)] flex items-center justify-center mx-auto mb-4">
-            <Icon name="Anchor" size={26} className="text-[hsl(213,80%,15%)]" />
-          </div>
-          <h1 className="font-display text-4xl font-semibold text-white mb-1">YachtCharter</h1>
+          <img src={LOGO_URL} alt="Abeona Club" className="w-24 h-24 object-contain mx-auto mb-3 drop-shadow-lg" />
           <p className="text-blue-200 text-sm">Личный кабинет клиента</p>
         </div>
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-8 shadow-2xl">
@@ -1176,6 +1306,7 @@ const managerNavItems: { id: ManagerSection; label: string; icon: string; badge?
   { id: "create", label: "Новое бронирование", icon: "Plus" },
   { id: "clients", label: "Клиенты", icon: "Users" },
   { id: "messages", label: "Сообщения", icon: "MessageCircle", badge: 2 },
+  { id: "my-contacts", label: "Мои контакты", icon: "ContactRound" },
 ];
 
 const managerSectionTitles: Record<ManagerSection, string> = {
@@ -1184,7 +1315,99 @@ const managerSectionTitles: Record<ManagerSection, string> = {
   create: "Новое бронирование",
   clients: "Клиенты",
   messages: "Сообщения",
+  "my-contacts": "Мои контакты",
 };
+
+// ─── Manager: Edit My Contacts ────────────────────────────────────────────────
+function ManagerMyContacts() {
+  const [form, setForm] = useState(getManagerContacts());
+  const [saved, setSaved] = useState(false);
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = () => {
+    saveManagerContacts(form);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      {saved && (
+        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm animate-fade-in">
+          <Icon name="CheckCircle" size={15} />
+          Контакты сохранены — клиенты увидят их сразу
+        </div>
+      )}
+      <div className="ocean-card rounded-2xl p-6 space-y-4">
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Данные менеджера</h3>
+        {[
+          { key: "name", label: "Имя и фамилия", placeholder: "Елена Морская" },
+          { key: "position", label: "Должность", placeholder: "Менеджер по яхтенному чартеру" },
+        ].map(f => (
+          <div key={f.key}>
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5">{f.label}</label>
+            <input className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+              placeholder={f.placeholder} value={form[f.key as keyof typeof form]} onChange={e => set(f.key, e.target.value)} />
+          </div>
+        ))}
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1.5">Приветственное сообщение клиенту</label>
+          <textarea className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] resize-none"
+            rows={2} placeholder="Помогу с любым вопросом..." value={form.bio} onChange={e => set("bio", e.target.value)} />
+        </div>
+      </div>
+
+      <div className="ocean-card rounded-2xl p-6 space-y-4">
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Контакты</h3>
+        {[
+          { key: "phone", label: "Телефон", placeholder: "+7 916 000-00-00", icon: "Phone" },
+          { key: "email", label: "Email", placeholder: "elena@abeonaclub.ru", icon: "Mail" },
+        ].map(f => (
+          <div key={f.key}>
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+              <Icon name={f.icon} size={12} className="text-[hsl(199,65%,45%)]" /> {f.label}
+            </label>
+            <input className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+              placeholder={f.placeholder} value={form[f.key as keyof typeof form]} onChange={e => set(f.key, e.target.value)} />
+          </div>
+        ))}
+      </div>
+
+      <div className="ocean-card rounded-2xl p-6 space-y-4">
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)] flex items-center gap-2">
+          Мессенджеры
+          <span className="text-xs text-muted-foreground font-body font-normal">видят клиенты</span>
+        </h3>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full bg-[#25D366] flex items-center justify-center">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+            </div>
+            WhatsApp (номер без пробелов, со знаком +)
+          </label>
+          <input className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+            placeholder="+79160000000" value={form.whatsapp} onChange={e => set("whatsapp", e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full bg-[#2AABEE] flex items-center justify-center">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="white"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+            </div>
+            Telegram (username с @)
+          </label>
+          <input className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+            placeholder="@elena_yacht" value={form.telegram} onChange={e => set("telegram", e.target.value)} />
+        </div>
+      </div>
+
+      <button onClick={handleSave}
+        className="w-full bg-[hsl(213,70%,28%)] text-white py-3.5 rounded-2xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors flex items-center justify-center gap-2">
+        <Icon name="Save" size={16} />
+        Сохранить контакты
+      </button>
+    </div>
+  );
+}
 
 function ManagerPanel({ onLogout, managerName }: { onLogout: () => void; managerName?: string }) {
   const [activeSection, setActiveSection] = useState<ManagerSection>("dashboard");
@@ -1199,6 +1422,7 @@ function ManagerPanel({ onLogout, managerName }: { onLogout: () => void; manager
       case "create": return <ManagerCreateBooking />;
       case "clients": return <ManagerClients />;
       case "messages": return <MessagesSection />;
+      case "my-contacts": return <ManagerMyContacts />;
       default: return <ManagerDashboard setSection={setActiveSection} />;
     }
   };
@@ -1207,16 +1431,9 @@ function ManagerPanel({ onLogout, managerName }: { onLogout: () => void; manager
     <div className="min-h-screen bg-background flex">
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 flex flex-col transition-transform duration-300 ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
         style={{ background: "hsl(213,75%,11%)" }}>
-        <div className="px-6 py-6 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[hsl(45,85%,55%)] flex items-center justify-center">
-              <Icon name="Anchor" size={20} className="text-[hsl(213,80%,15%)]" />
-            </div>
-            <div>
-              <p className="font-display text-white text-lg font-semibold leading-tight">YachtCharter</p>
-              <p className="text-[hsl(45,85%,65%)] text-xs font-medium">Панель менеджера</p>
-            </div>
-          </div>
+        <div className="px-5 py-5 border-b border-white/10 flex items-center justify-between">
+          <img src={LOGO_URL} alt="Abeona Club" className="h-12 w-auto object-contain" />
+          <span className="text-[hsl(45,85%,65%)] text-[10px] font-medium uppercase tracking-widest">Менеджер</span>
         </div>
         <div className="mx-4 mt-4 p-3 rounded-xl bg-white/8 border border-white/10">
           <div className="flex items-center gap-2.5">
@@ -1309,6 +1526,7 @@ function ClientPanel({ onLogout, onBack, bookingData }: { onLogout: () => void; 
       case "documents": return <DocumentsSection />;
       case "payments": return <PaymentsSection />;
       case "messages": return <MessagesSection />;
+      case "contacts": return <ContactsSection />;
       case "marina": return <MarinaSection />;
       case "reminders": return <RemindersSection />;
       case "routes": return <RoutesSection />;
@@ -1319,16 +1537,8 @@ function ClientPanel({ onLogout, onBack, bookingData }: { onLogout: () => void; 
   return (
     <div className="min-h-screen bg-background flex">
       <aside className={`fixed inset-y-0 left-0 z-40 w-64 bg-[hsl(213,80%,13%)] flex flex-col transition-transform duration-300 ${mobileMenuOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}>
-        <div className="px-6 py-6 border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[hsl(45,85%,55%)] flex items-center justify-center">
-              <Icon name="Anchor" size={20} className="text-[hsl(213,80%,15%)]" />
-            </div>
-            <div>
-              <p className="font-display text-white text-lg font-semibold leading-tight">YachtCharter</p>
-              <p className="text-blue-300 text-xs">Личный кабинет</p>
-            </div>
-          </div>
+        <div className="px-5 py-5 border-b border-white/10">
+          <img src={LOGO_URL} alt="Abeona Club" className="h-12 w-auto object-contain" />
         </div>
         <div className="mx-4 mt-4 p-3 rounded-xl bg-white/8 border border-white/10">
           <p className="text-blue-300 text-xs mb-1">Рейс</p>
@@ -1408,6 +1618,7 @@ const sectionTitles: Record<Section, string> = {
   documents: "Документы",
   payments: "Платежи",
   messages: "Сообщения",
+  contacts: "Контакты менеджера",
   marina: "Марина",
   reminders: "Напоминания",
   routes: "Маршруты",
@@ -1462,10 +1673,7 @@ const Index = () => {
         </svg>
       </div>
       <div className="relative z-10 text-center mb-10 animate-fade-in">
-        <div className="w-16 h-16 rounded-2xl bg-[hsl(45,85%,55%)] flex items-center justify-center mx-auto mb-5">
-          <Icon name="Anchor" size={30} className="text-[hsl(213,80%,15%)]" />
-        </div>
-        <h1 className="font-display text-5xl font-semibold text-white mb-2">YachtCharter</h1>
+        <img src={LOGO_URL} alt="Abeona Club" className="w-28 h-28 object-contain mx-auto mb-4 drop-shadow-xl" />
         <p className="text-blue-200">Выберите способ входа</p>
       </div>
       <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-2xl">

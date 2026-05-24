@@ -1201,7 +1201,7 @@ function ManagerEditBooking({ booking, token, onBack, onSaved }: {
   });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [confirmDel, setConfirmDel] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false); // ✅ ИСПРАВЛЕНО: объявлено состояние
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -1230,7 +1230,6 @@ function ManagerEditBooking({ booking, token, onBack, onSaved }: {
           ...form,
           cabins: form.cabins ? Number(form.cabins) : null,
           berths: form.berths ? Number(form.berths) : null,
-          date_from: form.date_from, date_to: form.date_to,
         }),
       });
       const data = await res.json();
@@ -1246,7 +1245,9 @@ function ManagerEditBooking({ booking, token, onBack, onSaved }: {
   const cls3 = "grid grid-cols-1 md:grid-cols-3 gap-4";
   const inp = "w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent";
 
-  const F = ({ label, fkey, placeholder = "", type = "text" }: { label: string; fkey: string; placeholder?: string; type?: string }) => (
+  const F = ({ label, fkey, placeholder = "", type = "text" }: {
+    label: string; fkey: string; placeholder?: string; type?: string;
+  }) => (
     <div>
       <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
       <input type={type} className={inp} placeholder={placeholder}
@@ -1343,6 +1344,7 @@ function ManagerEditBooking({ booking, token, onBack, onSaved }: {
         </div>
       </div>
 
+      {/* Кнопки сохранения */}
       <div className="flex gap-3">
         <button onClick={onBack} className="flex-1 border-2 border-[hsl(213,70%,28%)] text-[hsl(213,70%,28%)] py-3 rounded-2xl font-semibold text-sm hover:bg-blue-50 transition-colors">
           Отмена
@@ -1354,7 +1356,7 @@ function ManagerEditBooking({ booking, token, onBack, onSaved }: {
         </button>
       </div>
 
-      {/* Удаление бронирования */}
+      {/* Опасная зона — удаление бронирования */}
       <div className="ocean-card rounded-2xl p-5 border-red-200 bg-red-50/50 mb-6">
         <h3 className="font-semibold text-red-700 text-sm mb-2 flex items-center gap-2">
           <Icon name="AlertTriangle" size={15} />Опасная зона
@@ -1362,7 +1364,10 @@ function ManagerEditBooking({ booking, token, onBack, onSaved }: {
         <p className="text-xs text-red-600 mb-3">Удаление бронирования необратимо. Профиль клиента останется.</p>
         {confirmDel ? (
           <div className="flex gap-2">
-            <button onClick={() => setConfirmDel(false)} className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-xs font-medium hover:bg-white transition-colors">Отмена</button>
+            <button onClick={() => setConfirmDel(false)}
+              className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-xl text-xs font-medium hover:bg-white transition-colors">
+              Отмена
+            </button>
             <button onClick={handleDelete} disabled={deleting}
               className="flex-1 bg-red-600 text-white py-2 rounded-xl text-xs font-semibold hover:bg-red-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-1">
               {deleting ? <Icon name="Loader" size={13} className="animate-spin" /> : <Icon name="Trash2" size={13} />}
@@ -1380,6 +1385,7 @@ function ManagerEditBooking({ booking, token, onBack, onSaved }: {
   );
 }
 
+// ─── Manager Bookings List ────────────────────────────────────────────────────
 function ManagerBookingsList({ token }: { token?: string }) {
   const [filter, setFilter] = useState<"all" | "confirmed" | "pending" | "new">("all");
   const [bookings, setBookings] = useState<RealBooking[]>([]);

@@ -1003,9 +1003,13 @@ function ClientBookingsList({ token, onSelect }: { token: string; onSelect: (b: 
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`${API.bookings}/`, { headers: { "X-Auth-Token": token } })
+    const t = token || localStorage.getItem("yc_token") || "";
+    fetch(`${API.bookings}?token=${t}`)
       .then(r => r.json())
-      .then(data => { setBookings(data.bookings || []); })
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.bookings || []);
+        setBookings(list);
+      })
       .catch(() => setError("Не удалось загрузить бронирования"))
       .finally(() => setLoading(false));
   }, [token]);
@@ -1180,10 +1184,10 @@ function ManagerBookingsList({ token }: { token?: string }) {
 
   const load = () => {
     setLoading(true);
-    fetch(API.bookings, { headers: { "X-Auth-Token": token || localStorage.getItem("yc_token") || "" } })
+    const t = token || localStorage.getItem("yc_token") || "";
+    fetch(`${API.bookings}?token=${t}`)
       .then(r => r.json())
       .then(data => {
-        // API возвращает массив напрямую или { bookings: [...] }
         const list = Array.isArray(data) ? data : (data.bookings || []);
         setBookings(list);
       })
@@ -1268,7 +1272,8 @@ function ManagerCreateBooking({ token, onCreated }: { token?: string; onCreated?
     setSaving(true); setError("");
     try {
       // Создаём или находим клиента по имени+email, затем создаём бронирование
-      const res = await fetch(API.bookings, {
+      const t = token || localStorage.getItem("yc_token") || "";
+      const res = await fetch(`${API.bookings}?token=${t}`, {
         method: "POST",
         body: JSON.stringify({
           yacht_name: form.yacht_name,
@@ -1282,7 +1287,6 @@ function ManagerCreateBooking({ token, onCreated }: { token?: string; onCreated?
           client_name: form.client_name,
           client_email: form.client_email,
         }),
-        headers: { "X-Auth-Token": token || localStorage.getItem("yc_token") || "" },
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Ошибка создания"); return; }
@@ -1421,13 +1425,14 @@ function ManagerTeam({ token }: { token: string }) {
   const [inviting, setInviting] = useState(false);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
+  const authPost = (payload: object) => fetch(API.authManager, {
+    method: "POST",
+    body: JSON.stringify({ ...payload, _token: token }),
+  });
+
   const load = () => {
     setLoading(true);
-    fetch(API.authManager, {
-      method: "POST",
-      body: JSON.stringify({ action: "list-managers" }),
-      headers: { "X-Auth-Token": token },
-    })
+    authPost({ action: "list-managers" })
       .then(r => r.json())
       .then(d => setManagers(d.managers || []))
       .finally(() => setLoading(false));
@@ -1439,11 +1444,7 @@ function ManagerTeam({ token }: { token: string }) {
     if (!inviteEmail || !inviteName) { setMsg({ type: "err", text: "Заполните имя и email" }); return; }
     setInviting(true); setMsg(null);
     try {
-      const res = await fetch(API.authManager, {
-        method: "POST",
-        body: JSON.stringify({ action: "invite-manager", email: inviteEmail, name: inviteName }),
-        headers: { "X-Auth-Token": token },
-      });
+      const res = await authPost({ action: "invite-manager", email: inviteEmail, name: inviteName });
       const data = await res.json();
       if (!res.ok) { setMsg({ type: "err", text: data.error || "Ошибка" }); return; }
       setMsg({ type: "ok", text: `Приглашение отправлено на ${inviteEmail}` });
@@ -1454,11 +1455,7 @@ function ManagerTeam({ token }: { token: string }) {
   };
 
   const handleToggle = async (id: number) => {
-    await fetch(API.authManager, {
-      method: "POST",
-      body: JSON.stringify({ action: "toggle-manager", manager_id: id }),
-      headers: { "X-Auth-Token": token },
-    });
+    await authPost({ action: "toggle-manager", manager_id: id });
     load();
   };
 

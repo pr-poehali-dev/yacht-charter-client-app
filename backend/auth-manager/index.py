@@ -599,6 +599,11 @@ def handler(event, context):
             "event_keys": list(event.keys()),
         })
 
+    # Если токен передан в теле (_token) — добавляем в headers_lower для совместимости
+    body_token = body.get("_token", "")
+    if body_token and not headers_lower.get("x-auth-token"):
+        headers_lower["x-auth-token"] = body_token
+
     # Определяем действие: по полю action в теле запроса
     action = body.get("action", "")
 
@@ -607,6 +612,9 @@ def handler(event, context):
         return handle_login(body)
 
     if path == "/me" or (action == "me"):
+        # Также принимаем токен из тела
+        if body.get("_token") and not headers_lower.get("x-auth-token"):
+            headers_lower["x-auth-token"] = body.get("_token")
         return handle_me(headers_lower)
 
     if path == "/set-password" or (action == "set-password"):

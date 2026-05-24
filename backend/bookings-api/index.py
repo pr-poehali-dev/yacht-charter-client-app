@@ -228,7 +228,15 @@ def handler(event, context):
             "body": "",
         }
 
+    # Токен из заголовка, query string или тела запроса
     token = (headers_lower.get("x-auth-token") or "").strip()
+    if not token:
+        query = event.get("queryStringParameters") or {}
+        token = (query.get("token") or "").strip()
+    if not token:
+        # Попробуем прочитать из тела (если тело уже распарсено ниже)
+        pass
+
     if not token:
         return json_response(401, {"error": "Токен не передан"})
 
@@ -248,13 +256,22 @@ def handler(event, context):
                 return json_response(403, {"error": "Доступ запрещён: требуется роль менеджера"})
 
             raw_body = event.get("body") or "{}"
+            is_base64 = event.get("isBase64Encoded", False)
             if isinstance(raw_body, str):
                 try:
-                    body = json.loads(raw_body)
-                except json.JSONDecodeError:
-                    return json_response(400, {"error": "Некорректный JSON"})
+                    if is_base64:
+                        import base64
+                        raw_body = base64.b64decode(raw_body).decode("utf-8")
+                    body = json.loads(raw_body) if raw_body.strip() else {}
+                except Exception:
+                    try:
+                        import base64
+                        decoded = base64.b64decode(raw_body + "==").decode("utf-8")
+                        body = json.loads(decoded)
+                    except Exception:
+                        body = {}
             else:
-                body = raw_body
+                body = raw_body or {}
 
             return handle_create_booking(body, session, conn)
 

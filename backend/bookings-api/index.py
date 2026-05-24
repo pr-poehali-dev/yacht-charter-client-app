@@ -76,22 +76,12 @@ def handle_get_bookings(session: dict, conn) -> dict:
 
     base_query = """
         SELECT
-            b.id,
-            b.yacht_name,
-            b.yacht_type,
-            b.marina,
-            b.country,
-            b.date_from,
-            b.date_to,
-            b.status,
-            b.captain,
-            b.cabins,
-            b.berths,
-            b.length,
-            b.engine,
-            b.notes,
-            b.client_id,
-            c.name AS client_name
+            b.id, b.yacht_name, b.yacht_type, b.marina, b.country, b.flag,
+            b.date_from, b.date_to, b.status,
+            b.captain, b.cabins, b.berths, b.length, b.engine, b.notes,
+            b.marina_address, b.marina_vhf, b.marina_phone, b.marina_email,
+            b.marina_checkin, b.marina_checkout, b.marina_coordinates,
+            b.client_id, c.name AS client_name, c.email AS client_email, c.phone AS client_phone
         FROM bookings b
         LEFT JOIN clients c ON c.id = b.client_id
     """
@@ -159,6 +149,7 @@ def handle_create_booking(body: dict, session: dict, conn) -> dict:
     yacht_type = body.get("yacht_type")
     marina = body.get("marina")
     country = body.get("country")
+    flag = body.get("flag")
     date_from = body.get("date_from")
     date_to = body.get("date_to")
     status = body.get("status", "pending")
@@ -168,28 +159,46 @@ def handle_create_booking(body: dict, session: dict, conn) -> dict:
     length = body.get("length")
     engine = body.get("engine")
     notes = body.get("notes")
+    marina_address = body.get("marina_address")
+    marina_vhf = body.get("marina_vhf")
+    marina_phone = body.get("marina_phone")
+    marina_email = body.get("marina_email")
+    marina_checkin = body.get("marina_checkin")
+    marina_checkout = body.get("marina_checkout")
+    marina_coordinates = body.get("marina_coordinates")
     created_by = body.get("manager_id") or session.get("user_id")
+
+    # Обновляем телефон клиента если передан
+    client_phone = body.get("client_phone") or (body.get("client_email") and "")
+    if client_phone and client_id:
+        cur.execute("UPDATE clients SET phone = %s WHERE id = %s AND (phone IS NULL OR phone = '')", [client_phone, client_id])
 
     cur.execute(
         """
         INSERT INTO bookings (
-            client_id, yacht_name, yacht_type, marina, country,
+            client_id, yacht_name, yacht_type, marina, country, flag,
             date_from, date_to, status, captain, cabins, berths,
-            length, engine, notes, created_by
+            length, engine, notes, created_by,
+            marina_address, marina_vhf, marina_phone, marina_email,
+            marina_checkin, marina_checkout, marina_coordinates
         ) VALUES (
-            %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s,
+            %s, %s, %s, %s,
+            %s, %s, %s
         )
         RETURNING
-            id, yacht_name, yacht_type, marina, country,
+            id, yacht_name, yacht_type, marina, country, flag,
             date_from, date_to, status, captain, cabins, berths,
             length, engine, notes, client_id, created_by
         """,
         [
-            client_id, yacht_name, yacht_type, marina, country,
+            client_id, yacht_name, yacht_type, marina, country, flag,
             date_from, date_to, status, captain, cabins, berths,
             length, engine, notes, created_by,
+            marina_address, marina_vhf, marina_phone, marina_email,
+            marina_checkin, marina_checkout, marina_coordinates,
         ],
     )
     row = cur.fetchone()

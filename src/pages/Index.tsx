@@ -1258,8 +1258,33 @@ function ManagerBookingsList({ token }: { token?: string }) {
 }
 
 // ─── Manager Create Booking ───────────────────────────────────────────────────
+const EMPTY_FORM = {
+  client_name: "", client_email: "", client_phone: "",
+  yacht_name: "", yacht_type: "", flag: "",
+  captain: "", cabins: "", berths: "", length: "", engine: "",
+  marina_name: "", marina_address: "", marina_vhf: "", marina_phone: "", marina_email: "",
+  marina_checkin: "", marina_checkout: "", marina_coordinates: "",
+  country: "", dateFrom: "", dateTo: "",
+  status: "new", notes: "",
+};
+
+function Field({ label, fkey, form, set, placeholder = "", type = "text" }: {
+  label: string; fkey: string; form: typeof EMPTY_FORM; set: (k: string, v: string) => void;
+  placeholder?: string; type?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
+      <input type={type}
+        className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+        placeholder={placeholder} value={form[fkey as keyof typeof EMPTY_FORM]}
+        onChange={(e) => set(fkey, e.target.value)} />
+    </div>
+  );
+}
+
 function ManagerCreateBooking({ token, onCreated }: { token?: string; onCreated?: () => void }) {
-  const [form, setForm] = useState({ client_name: "", client_email: "", yacht_name: "", yacht_type: "", marina: "", country: "", dateFrom: "", dateTo: "", status: "new", notes: "" });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -1271,91 +1296,110 @@ function ManagerCreateBooking({ token, onCreated }: { token?: string; onCreated?
     }
     setSaving(true); setError("");
     try {
-      // Создаём или находим клиента по имени+email, затем создаём бронирование
       const t = token || localStorage.getItem("yc_token") || "";
       const res = await fetch(`${API.bookings}?token=${t}`, {
         method: "POST",
         body: JSON.stringify({
+          client_name: form.client_name,
+          client_email: form.client_email,
           yacht_name: form.yacht_name,
           yacht_type: form.yacht_type,
-          marina: form.marina,
+          captain: form.captain,
+          cabins: form.cabins ? Number(form.cabins) : null,
+          berths: form.berths ? Number(form.berths) : null,
+          length: form.length,
+          engine: form.engine,
+          marina: form.marina_name,
+          marina_address: form.marina_address,
+          marina_vhf: form.marina_vhf,
+          marina_phone: form.marina_phone,
+          marina_email: form.marina_email,
+          marina_checkin: form.marina_checkin,
+          marina_checkout: form.marina_checkout,
+          marina_coordinates: form.marina_coordinates,
           country: form.country,
+          flag: form.flag,
           date_from: form.dateFrom,
           date_to: form.dateTo,
           status: form.status,
           notes: form.notes,
-          client_name: form.client_name,
-          client_email: form.client_email,
         }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Ошибка создания"); return; }
       setSaved(true);
-      setForm({ client_name: "", client_email: "", yacht_name: "", yacht_type: "", marina: "", country: "", dateFrom: "", dateTo: "", status: "new", notes: "" });
+      setForm(EMPTY_FORM);
       setTimeout(() => { setSaved(false); onCreated?.(); }, 1500);
     } catch { setError("Ошибка соединения"); }
     finally { setSaving(false); }
   };
+
+  const cls2 = "grid grid-cols-1 md:grid-cols-2 gap-4";
+  const cls3 = "grid grid-cols-1 md:grid-cols-3 gap-4";
+  const card = "ocean-card rounded-2xl p-6 space-y-4";
 
   return (
     <div className="space-y-5 animate-fade-in">
       {saved && <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm animate-fade-in"><Icon name="CheckCircle" size={16} />Бронирование создано! Переходим к списку...</div>}
       {error && <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm animate-fade-in"><Icon name="AlertCircle" size={15} />{error}</div>}
 
-      <div className="ocean-card rounded-2xl p-6 space-y-4">
+      {/* Клиент */}
+      <div className={card}>
         <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Данные клиента</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[
-            { key: "client_name", label: "Имя клиента", placeholder: "Иван Иванов", type: "text" },
-            { key: "client_email", label: "Email клиента", placeholder: "ivan@example.com", type: "email" },
-          ].map((field) => (
-            <div key={field.key}>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">{field.label}</label>
-              <input type={field.type} className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
-                placeholder={field.placeholder} value={form[field.key as keyof typeof form]} onChange={(e) => set(field.key, e.target.value)} />
-            </div>
-          ))}
+        <div className={cls3}>
+          <Field label="Имя клиента" fkey="client_name" form={form} set={set} placeholder="Иван Иванов" />
+          <Field label="Email клиента" fkey="client_email" form={form} set={set} placeholder="ivan@example.com" type="email" />
+          <Field label="Телефон клиента" fkey="client_phone" form={form} set={set} placeholder="+7 916 000-00-00" />
         </div>
       </div>
 
-      <div className="ocean-card rounded-2xl p-6 space-y-4">
-        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Яхта и марина</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[
-            { key: "yacht_name", label: "Название яхты *", placeholder: "Beneteau Oceanis 51.1" },
-            { key: "yacht_type", label: "Тип яхты", placeholder: "Парусная / Моторная" },
-            { key: "marina", label: "Марина", placeholder: "ACI Marina Split" },
-            { key: "country", label: "Страна", placeholder: "Хорватия" },
-          ].map((field) => (
-            <div key={field.key}>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">{field.label}</label>
-              <input className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
-                placeholder={field.placeholder} value={form[field.key as keyof typeof form]} onChange={(e) => set(field.key, e.target.value)} />
-            </div>
-          ))}
+      {/* Яхта */}
+      <div className={card}>
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Данные яхты</h3>
+        <div className={cls2}>
+          <Field label="Название яхты *" fkey="yacht_name" form={form} set={set} placeholder="Beneteau Oceanis 51.1" />
+          <Field label="Тип яхты" fkey="yacht_type" form={form} set={set} placeholder="Парусная яхта" />
+          <Field label="Шкипер" fkey="captain" form={form} set={set} placeholder="Алексей Воронов" />
+          <Field label="Длина" fkey="length" form={form} set={set} placeholder="15.3 м" />
+          <Field label="Двигатель" fkey="engine" form={form} set={set} placeholder="2 × 57 л.с." />
+          <Field label="Флаг (эмодзи страны)" fkey="flag" form={form} set={set} placeholder="🇭🇷" />
+        </div>
+        <div className={cls3}>
+          <Field label="Каюты" fkey="cabins" form={form} set={set} placeholder="4" type="number" />
+          <Field label="Спальных мест" fkey="berths" form={form} set={set} placeholder="8" type="number" />
+          <Field label="Страна" fkey="country" form={form} set={set} placeholder="Хорватия" />
         </div>
       </div>
 
-      <div className="ocean-card rounded-2xl p-6 space-y-4">
-        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Даты</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[
-            { key: "dateFrom", label: "Дата начала *", type: "date" },
-            { key: "dateTo", label: "Дата окончания *", type: "date" },
-          ].map((field) => (
-            <div key={field.key}>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">{field.label}</label>
-              <input type={field.type} className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
-                value={form[field.key as keyof typeof form]} onChange={(e) => set(field.key, e.target.value)} />
-            </div>
-          ))}
+      {/* Марина */}
+      <div className={card}>
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Марина</h3>
+        <div className={cls2}>
+          <Field label="Название марины" fkey="marina_name" form={form} set={set} placeholder="ACI Marina Split" />
+          <Field label="Адрес" fkey="marina_address" form={form} set={set} placeholder="Uvala Baluni, 21000 Сплит" />
+          <Field label="VHF канал" fkey="marina_vhf" form={form} set={set} placeholder="Channel 17" />
+          <Field label="Телефон марины" fkey="marina_phone" form={form} set={set} placeholder="+385 21 398 548" />
+          <Field label="Email марины" fkey="marina_email" form={form} set={set} placeholder="split@aci-club.hr" type="email" />
+          <Field label="Координаты" fkey="marina_coordinates" form={form} set={set} placeholder="43°30′05″ N, 16°24′10″ E" />
+          <Field label="Время заезда" fkey="marina_checkin" form={form} set={set} placeholder="14:00" />
+          <Field label="Время выезда" fkey="marina_checkout" form={form} set={set} placeholder="09:00" />
         </div>
       </div>
 
-      <div className="ocean-card rounded-2xl p-6 space-y-4">
+      {/* Даты */}
+      <div className={card}>
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Даты чартера</h3>
+        <div className={cls2}>
+          <Field label="Дата начала *" fkey="dateFrom" form={form} set={set} type="date" />
+          <Field label="Дата окончания *" fkey="dateTo" form={form} set={set} type="date" />
+        </div>
+      </div>
+
+      {/* Статус и заметки */}
+      <div className={card}>
         <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Статус и заметки</h3>
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1.5">Статус</label>
+          <label className="block text-xs font-medium text-muted-foreground mb-1.5">Статус бронирования</label>
           <select className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] appearance-none"
             value={form.status} onChange={(e) => set("status", e.target.value)}>
             <option value="new">Новое</option>
@@ -1366,7 +1410,7 @@ function ManagerCreateBooking({ token, onCreated }: { token?: string; onCreated?
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1.5">Заметки</label>
           <textarea className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] resize-none"
-            rows={3} placeholder="Пожелания клиента, особые условия..."
+            rows={3} placeholder="Пожелания клиента, особые условия, важная информация..."
             value={form.notes} onChange={(e) => set("notes", e.target.value)} />
         </div>
       </div>

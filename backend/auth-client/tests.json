@@ -1,0 +1,1 @@
+{"tests": [{"name": "Send OTP unknown email", "method": "POST", "path": "/", "body": {"action": "send-otp", "email": "unknown@test.com"}, "expectedStatus": 404, "bodyMatcher": "partial"}]}

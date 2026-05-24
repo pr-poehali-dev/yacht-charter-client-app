@@ -1,0 +1,235 @@
+"""
+API для управления бронированиями яхт.
+Поддерживает просмотр бронирований (для клиента — только свои, для менеджера — все)
+и создание новых бронирований (только для менеджера).
+"""
+
+import json
+import os
+from datetime import datetime, timezone
+
+import psycopg2
+
+DATABASE_URL = os.environ["DATABASE_URL"]
+MAIN_DB_SCHEMA = os.environ["MAIN_DB_SCHEMA"]
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Auth-Token",
+    "Content-Type": "application/json",
+}
+
+
+def get_connection():
+    conn = psycopg2.connect(
+        DATABASE_URL,
+        options=f"-c search_path={MAIN_DB_SCHEMA}",
+    )
+    return conn
+
+
+def json_response(status: int, body) -> dict:
+    return {
+        "statusCode": status,
+        "headers": CORS_HEADERS,
+        "body": json.dumps(body, ensure_ascii=False, default=str),
+    }
+
+
+def resolve_session(token: str, conn) -> dict | None:
+    """
+    Проверяет токен сессии в таблице sessions.
+    Возвращает словарь с полями role, manager_id/client_id или None если сессия не действительна.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT role, manager_id, client_id, expires_at
+        FROM sessions
+        WHERE token = %s
+        """,
+        [token],
+    )
+    row = cur.fetchone()
+    cur.close()
+
+    if row is None:
+        return None
+
+    role, manager_id, client_id, expires_at = row
+
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if datetime.now(timezone.utc) > expires_at:
+        return None
+
+    return {"role": role, "manager_id": manager_id, "client_id": client_id}
+
+
+def handle_get_bookings(session: dict, conn) -> dict:
+    """
+    Возвращает список бронирований.
+    Клиент получает только свои бронирования, менеджер — все.
+    """
+    cur = conn.cursor()
+
+    base_query = """
+        SELECT
+            b.id,
+            b.yacht_name,
+            b.yacht_type,
+            b.marina,
+            b.country,
+            b.date_from,
+            b.date_to,
+            b.status,
+            b.captain,
+            b.cabins,
+            b.berths,
+            b.length,
+            b.engine,
+            b.notes,
+            b.client_id,
+            c.name AS client_name
+        FROM bookings b
+        LEFT JOIN clients c ON c.id = b.client_id
+    """
+
+    if session["role"] == "client":
+        cur.execute(base_query + " WHERE b.client_id = %s ORDER BY b.date_from DESC", [session["client_id"]])
+    else:
+        cur.execute(base_query + " ORDER BY b.date_from DESC")
+
+    rows = cur.fetchall()
+    columns = [desc[0] for desc in cur.description]
+    cur.close()
+
+    bookings = [dict(zip(columns, row)) for row in rows]
+    return json_response(200, bookings)
+
+
+def handle_create_booking(body: dict, conn) -> dict:
+    """
+    Создаёт новое бронирование яхты.
+    Доступно только менеджерам. Возвращает созданную запись.
+    """
+    required_fields = ["client_id", "yacht_name", "date_from", "date_to"]
+    for field in required_fields:
+        if field not in body or body[field] is None:
+            return json_response(400, {"error": f"Поле '{field}' обязательно"})
+
+    client_id = body.get("client_id")
+    yacht_name = body.get("yacht_name")
+    yacht_type = body.get("yacht_type")
+    marina = body.get("marina")
+    country = body.get("country")
+    date_from = body.get("date_from")
+    date_to = body.get("date_to")
+    status = body.get("status", "pending")
+    captain = body.get("captain")
+    cabins = body.get("cabins")
+    berths = body.get("berths")
+    length = body.get("length")
+    engine = body.get("engine")
+    notes = body.get("notes")
+
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO bookings (
+            client_id, yacht_name, yacht_type, marina, country,
+            date_from, date_to, status, captain, cabins, berths,
+            length, engine, notes
+        ) VALUES (
+            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s
+        )
+        RETURNING
+            id, yacht_name, yacht_type, marina, country,
+            date_from, date_to, status, captain, cabins, berths,
+            length, engine, notes, client_id
+        """,
+        [
+            client_id, yacht_name, yacht_type, marina, country,
+            date_from, date_to, status, captain, cabins, berths,
+            length, engine, notes,
+        ],
+    )
+    row = cur.fetchone()
+    columns = [desc[0] for desc in cur.description]
+    conn.commit()
+
+    # Получаем имя клиента
+    cur.execute("SELECT name FROM clients WHERE id = %s", [client_id])
+    client_row = cur.fetchone()
+    cur.close()
+
+    booking = dict(zip(columns, row))
+    booking["client_name"] = client_row[0] if client_row else None
+
+    return json_response(201, booking)
+
+
+def handler(event, context):
+    """
+    Главный обработчик API бронирований яхт.
+    Маршруты:
+      GET  / — список бронирований (клиент видит свои, менеджер видит все)
+      POST / — создание бронирования (только менеджер)
+    Требует заголовок X-Auth-Token с действующим токеном сессии.
+    """
+    method = event.get("method", "GET").upper()
+    path = event.get("path", "/").rstrip("/") or "/"
+    headers = event.get("headers") or {}
+
+    headers_lower = {k.lower(): v for k, v in headers.items()}
+
+    if method == "OPTIONS":
+        return {
+            "statusCode": 204,
+            "headers": CORS_HEADERS,
+            "body": "",
+        }
+
+    token = (headers_lower.get("x-auth-token") or "").strip()
+    if not token:
+        return json_response(401, {"error": "Токен не передан"})
+
+    conn = None
+    try:
+        conn = get_connection()
+        session = resolve_session(token, conn)
+
+        if session is None:
+            return json_response(401, {"error": "Сессия не найдена или истекла"})
+
+        if method == "GET" and path == "/":
+            return handle_get_bookings(session, conn)
+
+        if method == "POST" and path == "/":
+            if session["role"] != "manager":
+                return json_response(403, {"error": "Доступ запрещён: требуется роль менеджера"})
+
+            raw_body = event.get("body") or "{}"
+            if isinstance(raw_body, str):
+                try:
+                    body = json.loads(raw_body)
+                except json.JSONDecodeError:
+                    return json_response(400, {"error": "Некорректный JSON"})
+            else:
+                body = raw_body
+
+            return handle_create_booking(body, conn)
+
+        return json_response(404, {"error": "Маршрут не найден"})
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return json_response(500, {"error": f"Внутренняя ошибка сервера: {str(e)}"})
+    finally:
+        if conn:
+            conn.close()

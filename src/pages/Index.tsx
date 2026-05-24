@@ -1,9 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 
+// ─── API URLs ─────────────────────────────────────────────────────────────────
+const API = {
+  authManager: "https://functions.poehali.dev/c97bf12a-5428-4ee6-8007-744b50b22d45",
+  authClient: "https://functions.poehali.dev/a5fae4a7-68c6-4b61-9cd4-e1235bd43b35",
+  bookings: "https://functions.poehali.dev/5dc8c023-b1ba-40cd-91c6-8005c35b7552",
+};
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Role = "select" | "client" | "manager";
+
+interface SessionUser { token: string; name: string; email: string; role: string; client_id?: number; }
 
 type ManagerSection = "dashboard" | "bookings" | "create" | "clients" | "messages";
 
@@ -142,7 +151,8 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 // ─── Sections ──────────────────────────────────────────────────────────────────
-function BookingSection() {
+function BookingSection({ bookingOverride }: { bookingOverride?: typeof booking } = {}) {
+  const b = bookingOverride || booking;
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="wave-bg rounded-2xl p-8 text-white relative overflow-hidden">
@@ -155,20 +165,20 @@ function BookingSection() {
           <div className="flex items-start justify-between flex-wrap gap-4">
             <div>
               <p className="text-blue-200 text-xs font-body mb-1 tracking-widest uppercase">Ваше бронирование</p>
-              <h2 className="font-display text-4xl font-semibold">{booking.yachtName}</h2>
-              <p className="text-blue-200 mt-1 text-sm">{booking.yachtType} · {booking.flag} {booking.country}</p>
+              <h2 className="font-display text-4xl font-semibold">{b.yachtName}</h2>
+              <p className="text-blue-200 mt-1 text-sm">{b.yachtType} · {b.flag} {b.country}</p>
             </div>
             <span className="inline-flex items-center gap-1.5 bg-emerald-400/20 border border-emerald-300/40 text-emerald-200 px-4 py-1.5 rounded-full text-sm font-medium">
               <Icon name="CheckCircle" size={14} />
-              {booking.status}
+              {b.status}
             </span>
           </div>
           <div className="mt-7 grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: "Отход", value: booking.dateFrom, icon: "CalendarCheck" },
-              { label: "Возврат", value: booking.dateTo, icon: "CalendarX" },
-              { label: "Ночей", value: String(booking.nights), icon: "Moon" },
-              { label: "Марина", value: "ACI Split", icon: "Anchor" },
+              { label: "Отход", value: b.dateFrom, icon: "CalendarCheck" },
+              { label: "Возврат", value: b.dateTo, icon: "CalendarX" },
+              { label: "Ночей", value: String(b.nights), icon: "Moon" },
+              { label: "Марина", value: b.marina, icon: "Anchor" },
             ].map((item) => (
               <div key={item.label} className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
                 <Icon name={item.icon} size={14} className="text-blue-200 mb-1" />
@@ -185,10 +195,10 @@ function BookingSection() {
           <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)] mb-4">Технические данные</h3>
           <div className="space-y-0">
             {[
-              { label: "Длина", value: booking.length, icon: "Ruler" },
-              { label: "Каюты / места", value: `${booking.cabins} / ${booking.berths}`, icon: "BedDouble" },
-              { label: "Двигатель", value: booking.engine, icon: "Zap" },
-              { label: "Шкипер", value: booking.captain, icon: "User" },
+              { label: "Длина", value: b.length, icon: "Ruler" },
+              { label: "Каюты / места", value: `${b.cabins} / ${b.berths}`, icon: "BedDouble" },
+              { label: "Двигатель", value: b.engine, icon: "Zap" },
+              { label: "Шкипер", value: b.captain, icon: "User" },
             ].map((item) => (
               <div key={item.label} className="flex items-center justify-between py-3 border-b border-blue-100 last:border-0">
                 <span className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -535,56 +545,335 @@ function RoutesSection() {
   );
 }
 
-// ─── Role Select Screen ───────────────────────────────────────────────────────
-function RoleSelect({ onSelect }: { onSelect: (role: "client" | "manager") => void }) {
+// ─── Auth: Manager Login ──────────────────────────────────────────────────────
+function ManagerLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleLogin = async () => {
+    if (!email || !password) { setError("Заполните все поля"); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(`${API.authManager}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Неверный email или пароль"); return; }
+      localStorage.setItem("yc_token", data.token);
+      localStorage.setItem("yc_role", "manager");
+      onSuccess({ ...data, role: "manager" });
+    } catch {
+      setError("Ошибка соединения. Попробуйте ещё раз.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen wave-bg flex flex-col items-center justify-center p-6 relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none opacity-10">
         <svg viewBox="0 0 1440 200" className="absolute bottom-0 w-full" fill="white" preserveAspectRatio="none">
           <path d="M0,80 C360,140 720,20 1080,80 C1260,110 1380,50 1440,80 L1440,200 L0,200 Z" />
         </svg>
-        <svg viewBox="0 0 1440 200" className="absolute bottom-8 w-full opacity-50" fill="white" preserveAspectRatio="none">
-          <path d="M0,100 C480,40 960,160 1440,100 L1440,200 L0,200 Z" />
+      </div>
+      <div className="relative z-10 w-full max-w-md animate-fade-in">
+        <div className="text-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-[hsl(45,85%,55%)] flex items-center justify-center mx-auto mb-4">
+            <Icon name="Anchor" size={26} className="text-[hsl(213,80%,15%)]" />
+          </div>
+          <h1 className="font-display text-4xl font-semibold text-white mb-1">YachtCharter</h1>
+          <p className="text-blue-200 text-sm">Вход для менеджеров</p>
+        </div>
+        <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-8 shadow-2xl">
+          <h2 className="font-display text-2xl font-semibold text-[hsl(213,80%,15%)] mb-6">Добро пожаловать</h2>
+          {error && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm mb-4 animate-fade-in">
+              <Icon name="AlertCircle" size={15} className="flex-shrink-0" />
+              {error}
+            </div>
+          )}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Email</label>
+              <input
+                type="email"
+                className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+                placeholder="manager@company.ru"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleLogin()}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Пароль</label>
+              <input
+                type="password"
+                className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+                placeholder="••••••••"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleLogin()}
+              />
+            </div>
+            <button
+              onClick={handleLogin}
+              disabled={loading}
+              className="w-full bg-[hsl(213,70%,28%)] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
+            >
+              {loading ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="LogIn" size={16} />}
+              {loading ? "Вход..." : "Войти"}
+            </button>
+          </div>
+        </div>
+        <p className="text-center text-blue-300 text-xs mt-6">
+          Вы клиент? <button className="text-[hsl(45,85%,65%)] underline" onClick={() => window.location.reload()}>Перейти ко входу для клиентов</button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Auth: Client Login ───────────────────────────────────────────────────────
+function ClientLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => void }) {
+  const [step, setStep] = useState<"email" | "otp">("email");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const sendOtp = async () => {
+    if (!email) { setError("Введите email"); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(`${API.authClient}/send-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Email не найден в системе"); return; }
+      setStep("otp");
+    } catch {
+      setError("Ошибка соединения. Попробуйте ещё раз.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async () => {
+    if (!code || code.length < 6) { setError("Введите 6-значный код"); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(`${API.authClient}/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Неверный или истёкший код"); return; }
+      localStorage.setItem("yc_token", data.token);
+      localStorage.setItem("yc_role", "client");
+      onSuccess({ ...data, role: "client" });
+    } catch {
+      setError("Ошибка соединения. Попробуйте ещё раз.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen wave-bg flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none opacity-10">
+        <svg viewBox="0 0 1440 200" className="absolute bottom-0 w-full" fill="white" preserveAspectRatio="none">
+          <path d="M0,80 C360,140 720,20 1080,80 C1260,110 1380,50 1440,80 L1440,200 L0,200 Z" />
         </svg>
       </div>
-      <div className="relative z-10 text-center mb-12 animate-fade-in">
-        <div className="w-16 h-16 rounded-2xl bg-[hsl(45,85%,55%)] flex items-center justify-center mx-auto mb-5">
-          <Icon name="Anchor" size={32} className="text-[hsl(213,80%,15%)]" />
+      <div className="relative z-10 w-full max-w-md animate-fade-in">
+        <div className="text-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-[hsl(45,85%,55%)] flex items-center justify-center mx-auto mb-4">
+            <Icon name="Anchor" size={26} className="text-[hsl(213,80%,15%)]" />
+          </div>
+          <h1 className="font-display text-4xl font-semibold text-white mb-1">YachtCharter</h1>
+          <p className="text-blue-200 text-sm">Личный кабинет клиента</p>
         </div>
-        <h1 className="font-display text-5xl font-semibold text-white mb-2">YachtCharter</h1>
-        <p className="text-blue-200 text-base">Выберите режим входа</p>
+        <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-8 shadow-2xl">
+          {step === "email" ? (
+            <>
+              <h2 className="font-display text-2xl font-semibold text-[hsl(213,80%,15%)] mb-2">Вход</h2>
+              <p className="text-sm text-muted-foreground mb-6">Введите email, который вы давали менеджеру. Мы отправим код подтверждения.</p>
+              {error && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm mb-4 animate-fade-in">
+                  <Icon name="AlertCircle" size={15} className="flex-shrink-0" />
+                  {error}
+                </div>
+              )}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">Ваш email</label>
+                  <input
+                    type="email"
+                    className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+                    placeholder="ivan@example.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && sendOtp()}
+                  />
+                </div>
+                <button
+                  onClick={sendOtp}
+                  disabled={loading}
+                  className="w-full bg-[hsl(213,70%,28%)] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {loading ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="Mail" size={16} />}
+                  {loading ? "Отправляем..." : "Получить код"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <button onClick={() => { setStep("email"); setCode(""); setError(""); }} className="flex items-center gap-1.5 text-xs text-muted-foreground mb-5 hover:text-[hsl(213,70%,28%)] transition-colors">
+                <Icon name="ArrowLeft" size={13} /> Изменить email
+              </button>
+              <h2 className="font-display text-2xl font-semibold text-[hsl(213,80%,15%)] mb-2">Введите код</h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                Мы отправили 6-значный код на <span className="font-medium text-[hsl(213,70%,28%)]">{email}</span>
+              </p>
+              {error && (
+                <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm mb-4 animate-fade-in">
+                  <Icon name="AlertCircle" size={15} className="flex-shrink-0" />
+                  {error}
+                </div>
+              )}
+              <div className="space-y-4">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-2xl font-bold text-center tracking-[0.5em] outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+                  placeholder="000000"
+                  value={code}
+                  onChange={e => setCode(e.target.value.replace(/\D/g, ""))}
+                  onKeyDown={e => e.key === "Enter" && verifyOtp()}
+                />
+                <button
+                  onClick={verifyOtp}
+                  disabled={loading}
+                  className="w-full bg-[hsl(213,70%,28%)] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  {loading ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="CheckCircle" size={16} />}
+                  {loading ? "Проверяем..." : "Войти"}
+                </button>
+                <button onClick={sendOtp} disabled={loading} className="w-full text-xs text-muted-foreground hover:text-[hsl(213,70%,28%)] transition-colors py-1">
+                  Не пришёл код? Отправить снова
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
-      <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-2xl">
-        <button
-          onClick={() => onSelect("client")}
-          className="group bg-white/12 hover:bg-white/20 backdrop-blur-sm border border-white/20 hover:border-white/40 rounded-2xl p-8 text-left transition-all duration-200 animate-fade-in"
-          style={{ animationDelay: "0.1s" }}
-        >
-          <div className="w-12 h-12 rounded-xl bg-[hsl(199,65%,45%)] flex items-center justify-center mb-5 group-hover:scale-105 transition-transform">
-            <Icon name="User" size={22} className="text-white" />
+    </div>
+  );
+}
+
+// ─── Client Bookings List ─────────────────────────────────────────────────────
+interface BookingItem {
+  id: number; yacht_name: string; yacht_type: string; marina: string; country: string;
+  date_from: string; date_to: string; status: string; captain: string;
+  cabins: number; berths: number; length: string; engine: string;
+}
+
+function ClientBookingsList({ token, onSelect }: { token: string; onSelect: (b: BookingItem) => void }) {
+  const [bookings, setBookings] = useState<BookingItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch(`${API.bookings}/`, { headers: { "X-Auth-Token": token } })
+      .then(r => r.json())
+      .then(data => { setBookings(data.bookings || []); })
+      .catch(() => setError("Не удалось загрузить бронирования"))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  const statusMap: Record<string, { label: string; cls: string }> = {
+    confirmed: { label: "Подтверждено", cls: "bg-emerald-100 text-emerald-800 border-emerald-200" },
+    pending: { label: "Ожидает", cls: "bg-amber-100 text-amber-800 border-amber-200" },
+    new: { label: "Новое", cls: "bg-blue-100 text-blue-800 border-blue-200" },
+    cancelled: { label: "Отменено", cls: "bg-red-100 text-red-700 border-red-200" },
+  };
+
+  if (loading) return (
+    <div className="min-h-screen wave-bg flex items-center justify-center">
+      <div className="text-center text-white animate-fade-in">
+        <Icon name="Loader" size={32} className="animate-spin mx-auto mb-3 opacity-70" />
+        <p className="text-blue-200 text-sm">Загружаем ваши бронирования...</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="wave-bg px-6 pt-10 pb-16">
+        <div className="max-w-2xl mx-auto">
+          <p className="text-blue-200 text-xs uppercase tracking-widest mb-1">Личный кабинет</p>
+          <h1 className="font-display text-4xl font-semibold text-white">Мои бронирования</h1>
+          <p className="text-blue-200 text-sm mt-1">{bookings.length > 0 ? `${bookings.length} ${bookings.length === 1 ? "бронирование" : "бронирования"}` : "Активных бронирований нет"}</p>
+        </div>
+      </div>
+      <div className="max-w-2xl mx-auto px-4 -mt-8 pb-10 space-y-4">
+        {error && (
+          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm animate-fade-in">
+            <Icon name="AlertCircle" size={15} /> {error}
           </div>
-          <h2 className="font-display text-2xl font-semibold text-white mb-2">Клиент</h2>
-          <p className="text-blue-200 text-sm leading-relaxed">Просмотр бронирования, экипаж, документы, переписка с менеджером</p>
-          <div className="mt-5 flex items-center gap-1.5 text-[hsl(45,85%,65%)] text-sm font-medium">
-            Войти как клиент
-            <Icon name="ArrowRight" size={14} className="group-hover:translate-x-1 transition-transform" />
+        )}
+        {bookings.length === 0 && !error && (
+          <div className="ocean-card rounded-2xl p-10 text-center animate-fade-in">
+            <Icon name="Anchor" size={36} className="text-[hsl(199,65%,45%)] mx-auto mb-3 opacity-50" />
+            <p className="font-display text-xl text-[hsl(213,80%,15%)]">Бронирований пока нет</p>
+            <p className="text-sm text-muted-foreground mt-1">Свяжитесь с менеджером для создания заказа</p>
           </div>
-        </button>
-        <button
-          onClick={() => onSelect("manager")}
-          className="group bg-white/12 hover:bg-white/20 backdrop-blur-sm border border-white/20 hover:border-[hsl(45,85%,55%)]/60 rounded-2xl p-8 text-left transition-all duration-200 animate-fade-in"
-          style={{ animationDelay: "0.2s" }}
-        >
-          <div className="w-12 h-12 rounded-xl bg-[hsl(45,85%,55%)] flex items-center justify-center mb-5 group-hover:scale-105 transition-transform">
-            <Icon name="Settings" size={22} className="text-[hsl(213,80%,15%)]" />
-          </div>
-          <h2 className="font-display text-2xl font-semibold text-white mb-2">Менеджер</h2>
-          <p className="text-blue-200 text-sm leading-relaxed">Управление бронированиями, создание рейсов, клиенты, напоминания</p>
-          <div className="mt-5 flex items-center gap-1.5 text-[hsl(45,85%,65%)] text-sm font-medium">
-            Войти как менеджер
-            <Icon name="ArrowRight" size={14} className="group-hover:translate-x-1 transition-transform" />
-          </div>
-        </button>
+        )}
+        {bookings.map((b, idx) => {
+          const s = statusMap[b.status] || { label: b.status, cls: "bg-gray-100 text-gray-600 border-gray-200" };
+          const nights = b.date_from && b.date_to
+            ? Math.round((new Date(b.date_to).getTime() - new Date(b.date_from).getTime()) / 86400000)
+            : null;
+          return (
+            <button
+              key={b.id}
+              onClick={() => onSelect(b)}
+              className="w-full ocean-card rounded-2xl p-5 text-left hover:shadow-md transition-shadow animate-fade-in"
+              style={{ animationDelay: `${idx * 0.08}s` }}
+            >
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <p className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">{b.yacht_name}</p>
+                  <p className="text-sm text-muted-foreground">{b.yacht_type || "Яхта"}{b.country ? ` · 🌍 ${b.country}` : ""}</p>
+                </div>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border flex-shrink-0 ${s.cls}`}>{s.label}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { icon: "MapPin", val: b.marina },
+                  { icon: "Calendar", val: b.date_from ? new Date(b.date_from).toLocaleDateString("ru", { day: "numeric", month: "short", year: "numeric" }) : "—" },
+                  { icon: "Moon", val: nights !== null ? `${nights} ночей` : "—" },
+                ].map(item => (
+                  <span key={item.val} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Icon name={item.icon} size={12} className="text-[hsl(199,65%,45%)] flex-shrink-0" />
+                    <span className="truncate">{item.val}</span>
+                  </span>
+                ))}
+              </div>
+              <div className="flex items-center justify-end mt-3 text-xs text-[hsl(199,65%,45%)] font-medium gap-1">
+                Открыть <Icon name="ArrowRight" size={12} />
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -897,9 +1186,11 @@ const managerSectionTitles: Record<ManagerSection, string> = {
   messages: "Сообщения",
 };
 
-function ManagerPanel({ onLogout }: { onLogout: () => void }) {
+function ManagerPanel({ onLogout, managerName }: { onLogout: () => void; managerName?: string }) {
   const [activeSection, setActiveSection] = useState<ManagerSection>("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const displayName = managerName || "Менеджер";
+  const initials = displayName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
 
   const renderSection = () => {
     switch (activeSection) {
@@ -929,10 +1220,10 @@ function ManagerPanel({ onLogout }: { onLogout: () => void }) {
         </div>
         <div className="mx-4 mt-4 p-3 rounded-xl bg-white/8 border border-white/10">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-[hsl(45,85%,55%)] flex items-center justify-center text-[hsl(213,80%,15%)] text-xs font-bold flex-shrink-0">ЕМ</div>
+            <div className="w-8 h-8 rounded-full bg-[hsl(45,85%,55%)] flex items-center justify-center text-[hsl(213,80%,15%)] text-xs font-bold flex-shrink-0">{initials}</div>
             <div>
-              <p className="text-white text-sm font-semibold">Елена Морская</p>
-              <p className="text-blue-300 text-xs">Старший менеджер</p>
+              <p className="text-white text-sm font-semibold">{displayName}</p>
+              <p className="text-blue-300 text-xs">Менеджер</p>
             </div>
           </div>
         </div>
@@ -974,7 +1265,7 @@ function ManagerPanel({ onLogout }: { onLogout: () => void }) {
               <Icon name="Settings" size={12} />
               Менеджер
             </span>
-            <div className="w-9 h-9 rounded-xl bg-[hsl(45,85%,55%)] flex items-center justify-center text-[hsl(213,80%,15%)] text-xs font-bold">ЕМ</div>
+            <div className="w-9 h-9 rounded-xl bg-[hsl(45,85%,55%)] flex items-center justify-center text-[hsl(213,80%,15%)] text-xs font-bold">{initials}</div>
           </div>
         </header>
         <div className="flex-1 px-4 md:px-8 py-6 max-w-3xl w-full mx-auto">
@@ -986,13 +1277,34 @@ function ManagerPanel({ onLogout }: { onLogout: () => void }) {
 }
 
 // ─── Client Panel ──────────────────────────────────────────────────────────────
-function ClientPanel({ onLogout }: { onLogout: () => void }) {
+function ClientPanel({ onLogout, onBack, bookingData }: { onLogout: () => void; onBack: () => void; bookingData: BookingItem }) {
   const [activeSection, setActiveSection] = useState<Section>("booking");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const nights = bookingData.date_from && bookingData.date_to
+    ? Math.round((new Date(bookingData.date_to).getTime() - new Date(bookingData.date_from).getTime()) / 86400000)
+    : booking.nights;
+  const dateFrom = bookingData.date_from ? new Date(bookingData.date_from).toLocaleDateString("ru", { day: "numeric", month: "long", year: "numeric" }) : booking.dateFrom;
+  const dateTo = bookingData.date_to ? new Date(bookingData.date_to).toLocaleDateString("ru", { day: "numeric", month: "long", year: "numeric" }) : booking.dateTo;
+
+  const activeBooking = {
+    ...booking,
+    yachtName: bookingData.yacht_name || booking.yachtName,
+    yachtType: bookingData.yacht_type || booking.yachtType,
+    marina: bookingData.marina || booking.marina,
+    country: bookingData.country || booking.country,
+    dateFrom, dateTo, nights,
+    captain: bookingData.captain || booking.captain,
+    cabins: bookingData.cabins ?? booking.cabins,
+    berths: bookingData.berths ?? booking.berths,
+    length: bookingData.length || booking.length,
+    engine: bookingData.engine || booking.engine,
+    status: bookingData.status === "confirmed" ? "Подтверждено" : bookingData.status === "pending" ? "Ожидает" : "Новое",
+  };
+
   const renderSection = () => {
     switch (activeSection) {
-      case "booking": return <BookingSection />;
+      case "booking": return <BookingSection bookingOverride={activeBooking} />;
       case "crew": return <CrewSection />;
       case "documents": return <DocumentsSection />;
       case "payments": return <PaymentsSection />;
@@ -1000,7 +1312,7 @@ function ClientPanel({ onLogout }: { onLogout: () => void }) {
       case "marina": return <MarinaSection />;
       case "reminders": return <RemindersSection />;
       case "routes": return <RoutesSection />;
-      default: return <BookingSection />;
+      default: return <BookingSection bookingOverride={activeBooking} />;
     }
   };
 
@@ -1020,10 +1332,10 @@ function ClientPanel({ onLogout }: { onLogout: () => void }) {
         </div>
         <div className="mx-4 mt-4 p-3 rounded-xl bg-white/8 border border-white/10">
           <p className="text-blue-300 text-xs mb-1">Рейс</p>
-          <p className="text-white text-sm font-semibold leading-tight">{booking.yachtName}</p>
+          <p className="text-white text-sm font-semibold leading-tight">{activeBooking.yachtName}</p>
           <p className="text-blue-300 text-xs mt-1 flex items-center gap-1">
             <Icon name="Calendar" size={10} />
-            {booking.dateFrom} — {booking.dateTo}
+            {dateFrom} — {dateTo}
           </p>
         </div>
         <nav className="flex-1 px-3 mt-4 space-y-0.5 overflow-y-auto">
@@ -1054,9 +1366,13 @@ function ClientPanel({ onLogout }: { onLogout: () => void }) {
               <Icon name="MessageCircle" size={14} className="text-blue-200" />
             </button>
           </div>
+          <button onClick={onBack} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-blue-300 hover:text-white hover:bg-white/8 transition-all">
+            <Icon name="ArrowLeft" size={14} />
+            Все бронирования
+          </button>
           <button onClick={onLogout} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-blue-300 hover:text-white hover:bg-white/8 transition-all">
             <Icon name="LogOut" size={14} />
-            Сменить роль
+            Выйти
           </button>
         </div>
       </aside>
@@ -1097,12 +1413,124 @@ const sectionTitles: Record<Section, string> = {
   routes: "Маршруты",
 };
 
-const Index = () => {
-  const [role, setRole] = useState<Role>("select");
+type AppScreen = "role-select" | "manager-login" | "client-login" | "client-bookings" | "client-cabinet" | "manager-panel";
 
-  if (role === "select") return <RoleSelect onSelect={setRole} />;
-  if (role === "manager") return <ManagerPanel onLogout={() => setRole("select")} />;
-  return <ClientPanel onLogout={() => setRole("select")} />;
+const Index = () => {
+  const [screen, setScreen] = useState<AppScreen>("role-select");
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [selectedBooking, setSelectedBooking] = useState<BookingItem | null>(null);
+
+  // Восстанавливаем сессию из localStorage
+  useEffect(() => {
+    const token = localStorage.getItem("yc_token");
+    const role = localStorage.getItem("yc_role");
+    if (token && role) {
+      // Быстрая проверка токена
+      const authUrl = role === "manager" ? `${API.authManager}/me` : `${API.bookings}/`;
+      fetch(authUrl, { headers: { "X-Auth-Token": token } })
+        .then(r => {
+          if (r.ok) {
+            return r.json().then(data => {
+              if (role === "manager") {
+                setUser({ token, name: data.name || "", email: data.email || "", role: "manager" });
+                setScreen("manager-panel");
+              } else {
+                setUser({ token, name: "", email: "", role: "client" });
+                setScreen("client-bookings");
+              }
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  const logout = () => {
+    localStorage.removeItem("yc_token");
+    localStorage.removeItem("yc_role");
+    setUser(null);
+    setSelectedBooking(null);
+    setScreen("role-select");
+  };
+
+  // Экран выбора роли
+  if (screen === "role-select") return (
+    <div className="min-h-screen wave-bg flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none opacity-10">
+        <svg viewBox="0 0 1440 200" className="absolute bottom-0 w-full" fill="white" preserveAspectRatio="none">
+          <path d="M0,80 C360,140 720,20 1080,80 C1260,110 1380,50 1440,80 L1440,200 L0,200 Z" />
+        </svg>
+      </div>
+      <div className="relative z-10 text-center mb-10 animate-fade-in">
+        <div className="w-16 h-16 rounded-2xl bg-[hsl(45,85%,55%)] flex items-center justify-center mx-auto mb-5">
+          <Icon name="Anchor" size={30} className="text-[hsl(213,80%,15%)]" />
+        </div>
+        <h1 className="font-display text-5xl font-semibold text-white mb-2">YachtCharter</h1>
+        <p className="text-blue-200">Выберите способ входа</p>
+      </div>
+      <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-2xl">
+        <button
+          onClick={() => setScreen("client-login")}
+          className="group bg-white/12 hover:bg-white/20 backdrop-blur-sm border border-white/20 hover:border-white/40 rounded-2xl p-8 text-left transition-all duration-200 animate-fade-in"
+          style={{ animationDelay: "0.1s" }}
+        >
+          <div className="w-12 h-12 rounded-xl bg-[hsl(199,65%,45%)] flex items-center justify-center mb-5 group-hover:scale-105 transition-transform">
+            <Icon name="User" size={22} className="text-white" />
+          </div>
+          <h2 className="font-display text-2xl font-semibold text-white mb-2">Я клиент</h2>
+          <p className="text-blue-200 text-sm leading-relaxed">Просмотр бронирований, документы, переписка с менеджером</p>
+          <div className="mt-5 flex items-center gap-1.5 text-[hsl(45,85%,65%)] text-sm font-medium">
+            Войти по email
+            <Icon name="ArrowRight" size={14} className="group-hover:translate-x-1 transition-transform" />
+          </div>
+        </button>
+        <button
+          onClick={() => setScreen("manager-login")}
+          className="group bg-white/12 hover:bg-white/20 backdrop-blur-sm border border-white/20 hover:border-[hsl(45,85%,55%)]/60 rounded-2xl p-8 text-left transition-all duration-200 animate-fade-in"
+          style={{ animationDelay: "0.2s" }}
+        >
+          <div className="w-12 h-12 rounded-xl bg-[hsl(45,85%,55%)] flex items-center justify-center mb-5 group-hover:scale-105 transition-transform">
+            <Icon name="Settings" size={22} className="text-[hsl(213,80%,15%)]" />
+          </div>
+          <h2 className="font-display text-2xl font-semibold text-white mb-2">Я менеджер</h2>
+          <p className="text-blue-200 text-sm leading-relaxed">Управление бронированиями, клиенты, документы</p>
+          <div className="mt-5 flex items-center gap-1.5 text-[hsl(45,85%,65%)] text-sm font-medium">
+            Войти с паролем
+            <Icon name="ArrowRight" size={14} className="group-hover:translate-x-1 transition-transform" />
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+
+  if (screen === "manager-login") return (
+    <ManagerLoginScreen onSuccess={u => { setUser(u); setScreen("manager-panel"); }} />
+  );
+
+  if (screen === "client-login") return (
+    <ClientLoginScreen onSuccess={u => { setUser(u); setScreen("client-bookings"); }} />
+  );
+
+  if (screen === "client-bookings") return (
+    <ClientBookingsList
+      token={user?.token || localStorage.getItem("yc_token") || ""}
+      onSelect={b => { setSelectedBooking(b); setScreen("client-cabinet"); }}
+    />
+  );
+
+  if (screen === "client-cabinet" && selectedBooking) return (
+    <ClientPanel
+      onLogout={logout}
+      onBack={() => setScreen("client-bookings")}
+      bookingData={selectedBooking}
+    />
+  );
+
+  if (screen === "manager-panel") return (
+    <ManagerPanel onLogout={logout} managerName={user?.name} />
+  );
+
+  return null;
 };
 
 export default Index;

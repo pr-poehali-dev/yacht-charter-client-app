@@ -1,0 +1,5 @@
+{
+  "auth-client": "https://functions.poehali.dev/a5fae4a7-68c6-4b61-9cd4-e1235bd43b35",
+  "auth-manager": "https://functions.poehali.dev/c97bf12a-5428-4ee6-8007-744b50b22d45",
+  "bookings-api": "https://functions.poehali.dev/5dc8c023-b1ba-40cd-91c6-8005c35b7552"
+}

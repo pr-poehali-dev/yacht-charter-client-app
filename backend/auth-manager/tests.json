@@ -1,0 +1,1 @@
+{"tests": [{"name": "Login wrong password", "method": "POST", "path": "/", "body": {"action": "login", "email": "manager@yachtcharter.ru", "password": "wrong"}, "expectedStatus": 401, "bodyMatcher": "partial"}]}

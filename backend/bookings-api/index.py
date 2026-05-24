@@ -124,13 +124,37 @@ def handle_create_booking(body: dict, session: dict, conn) -> dict:
     """
     Создаёт новое бронирование яхты.
     Доступно только менеджерам. Возвращает созданную запись.
+    Если передан client_name/client_email — создаёт клиента автоматически.
     """
-    required_fields = ["client_id", "yacht_name", "date_from", "date_to"]
-    for field in required_fields:
-        if field not in body or body[field] is None:
-            return json_response(400, {"error": f"Поле '{field}' обязательно"})
+    if not body.get("yacht_name") or not body.get("date_from") or not body.get("date_to"):
+        return json_response(400, {"error": "Поля yacht_name, date_from, date_to обязательны"})
 
+    cur = conn.cursor()
+
+    # Автосоздание клиента по имени/email
     client_id = body.get("client_id")
+    client_name_in = (body.get("client_name") or "").strip()
+    client_email_in = (body.get("client_email") or "").strip().lower()
+
+    if not client_id:
+        if client_email_in:
+            cur.execute("SELECT id FROM clients WHERE email = %s", [client_email_in])
+            row = cur.fetchone()
+            if row:
+                client_id = row[0]
+            else:
+                cur.execute(
+                    "INSERT INTO clients (email, name) VALUES (%s, %s) RETURNING id",
+                    [client_email_in, client_name_in or client_email_in]
+                )
+                client_id = cur.fetchone()[0]
+        elif client_name_in:
+            cur.execute(
+                "INSERT INTO clients (email, name) VALUES (%s, %s) RETURNING id",
+                [f"noemail_{session.get('user_id')}_{client_name_in.lower().replace(' ', '_')}@placeholder.local", client_name_in]
+            )
+            client_id = cur.fetchone()[0]
+
     yacht_name = body.get("yacht_name")
     yacht_type = body.get("yacht_type")
     marina = body.get("marina")
@@ -146,7 +170,6 @@ def handle_create_booking(body: dict, session: dict, conn) -> dict:
     notes = body.get("notes")
     created_by = body.get("manager_id") or session.get("user_id")
 
-    cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO bookings (

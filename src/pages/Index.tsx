@@ -1168,100 +1168,147 @@ function ManagerDashboard({ setSection }: { setSection: (s: ManagerSection) => v
 }
 
 // ─── Manager Bookings List ────────────────────────────────────────────────────
-function ManagerBookingsList() {
+interface RealBooking {
+  id: number; yacht_name: string; yacht_type: string; marina: string; country: string;
+  date_from: string; date_to: string; status: string; client_name: string; notes: string;
+}
+
+function ManagerBookingsList({ token }: { token?: string }) {
   const [filter, setFilter] = useState<"all" | "confirmed" | "pending" | "new">("all");
-  const filtered = filter === "all" ? managerBookings : managerBookings.filter((b) => b.status === filter);
+  const [bookings, setBookings] = useState<RealBooking[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
+    setLoading(true);
+    fetch(API.bookings, { headers: { "X-Auth-Token": token || localStorage.getItem("yc_token") || "" } })
+      .then(r => r.json())
+      .then(data => {
+        // API возвращает массив напрямую или { bookings: [...] }
+        const list = Array.isArray(data) ? data : (data.bookings || []);
+        setBookings(list);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, [token]);
+
+  const filtered = filter === "all" ? bookings : bookings.filter(b => b.status === filter);
+
+  const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("ru", { day: "numeric", month: "short", year: "numeric" }) : "—";
+
   return (
     <div className="space-y-5 animate-fade-in">
       <div className="flex gap-2 flex-wrap">
         {(["all", "confirmed", "pending", "new"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${filter === f ? "bg-[hsl(213,70%,28%)] text-white" : "bg-white border border-blue-200 text-[hsl(213,70%,28%)] hover:bg-blue-50"}`}
-          >
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${filter === f ? "bg-[hsl(213,70%,28%)] text-white" : "bg-white border border-blue-200 text-[hsl(213,70%,28%)] hover:bg-blue-50"}`}>
             {{ all: "Все", confirmed: "Подтверждённые", pending: "Ожидают", new: "Новые" }[f]}
           </button>
         ))}
+        <button onClick={load} className="ml-auto px-3 py-1.5 rounded-xl text-xs font-medium bg-white border border-blue-200 text-[hsl(213,70%,28%)] hover:bg-blue-50 flex items-center gap-1">
+          <Icon name="RefreshCw" size={11} /> Обновить
+        </button>
       </div>
-      <div className="space-y-4">
-        {filtered.map((b, idx) => {
-          const paidPct = Math.round((b.paid / b.total) * 100);
-          return (
+
+      {loading ? (
+        <div className="py-12 text-center"><Icon name="Loader" size={24} className="animate-spin mx-auto text-muted-foreground" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="ocean-card rounded-2xl p-10 text-center animate-fade-in">
+          <Icon name="CalendarX" size={36} className="text-[hsl(199,65%,45%)] mx-auto mb-3 opacity-50" />
+          <p className="font-display text-xl text-[hsl(213,80%,15%)]">Бронирований пока нет</p>
+          <p className="text-sm text-muted-foreground mt-1">Создайте первое бронирование</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filtered.map((b, idx) => (
             <div key={b.id} className="ocean-card rounded-2xl p-5 animate-fade-in" style={{ animationDelay: `${idx * 0.07}s` }}>
               <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
                 <div>
-                  <p className="font-semibold text-[hsl(213,80%,15%)]">{b.client}</p>
-                  <p className="text-sm text-muted-foreground">{b.yacht}</p>
+                  <p className="font-semibold text-[hsl(213,80%,15%)]">{b.client_name || "Клиент"}</p>
+                  <p className="text-sm text-muted-foreground">{b.yacht_name}{b.yacht_type ? ` · ${b.yacht_type}` : ""}</p>
                 </div>
                 <MgrStatusBadge status={b.status} />
               </div>
-              <div className="grid grid-cols-3 gap-3 mb-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
                 {[
-                  { icon: "MapPin", val: b.marina },
-                  { icon: "Calendar", val: `${b.dateFrom} — ${b.dateTo}` },
-                  { icon: "Users", val: `${b.crew} чел.` },
+                  { icon: "MapPin", val: b.marina || "—" },
+                  { icon: "Calendar", val: `${fmtDate(b.date_from)} — ${fmtDate(b.date_to)}` },
+                  { icon: "Globe", val: b.country || "—" },
                 ].map((item) => (
-                  <span key={item.val} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span key={item.icon} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Icon name={item.icon} size={12} className="text-[hsl(199,65%,45%)] flex-shrink-0" />
                     <span className="truncate">{item.val}</span>
                   </span>
                 ))}
               </div>
-              <div className="border-t border-blue-100 pt-3">
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-muted-foreground">Оплата</span>
-                  <span className="font-medium text-[hsl(213,80%,15%)]">{b.paid.toLocaleString("ru")} / {b.total.toLocaleString("ru")} EUR</span>
-                </div>
-                <div className="w-full bg-blue-100 rounded-full h-1.5">
-                  <div className="h-1.5 rounded-full bg-[hsl(213,70%,28%)] transition-all" style={{ width: `${paidPct}%` }} />
-                </div>
-              </div>
-              <div className="flex gap-2 mt-3">
-                <button className="flex-1 border border-[hsl(213,70%,28%)] text-[hsl(213,70%,28%)] py-2 rounded-xl text-xs font-semibold hover:bg-[hsl(213,70%,28%)] hover:text-white transition-all">
-                  Открыть
-                </button>
-                <button className="flex-1 border border-blue-200 text-muted-foreground py-2 rounded-xl text-xs font-medium hover:bg-blue-50 transition-colors">
-                  Сообщение
-                </button>
-              </div>
+              {b.notes && (
+                <p className="text-xs text-muted-foreground bg-blue-50 rounded-lg px-3 py-2 mb-3 line-clamp-2">{b.notes}</p>
+              )}
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Manager Create Booking ───────────────────────────────────────────────────
-function ManagerCreateBooking() {
-  const [form, setForm] = useState({ client: "", yacht: "", marina: "", dateFrom: "", dateTo: "", crew: "", status: "new", notes: "" });
+function ManagerCreateBooking({ token, onCreated }: { token?: string; onCreated?: () => void }) {
+  const [form, setForm] = useState({ client_name: "", client_email: "", yacht_name: "", yacht_type: "", marina: "", country: "", dateFrom: "", dateTo: "", status: "new", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
-  const handleSave = () => { setSaved(true); setTimeout(() => setSaved(false), 3000); };
+
+  const handleSave = async () => {
+    if (!form.yacht_name || !form.dateFrom || !form.dateTo) {
+      setError("Заполните название яхты и даты"); return;
+    }
+    setSaving(true); setError("");
+    try {
+      // Создаём или находим клиента по имени+email, затем создаём бронирование
+      const res = await fetch(API.bookings, {
+        method: "POST",
+        body: JSON.stringify({
+          yacht_name: form.yacht_name,
+          yacht_type: form.yacht_type,
+          marina: form.marina,
+          country: form.country,
+          date_from: form.dateFrom,
+          date_to: form.dateTo,
+          status: form.status,
+          notes: form.notes,
+          client_name: form.client_name,
+          client_email: form.client_email,
+        }),
+        headers: { "X-Auth-Token": token || localStorage.getItem("yc_token") || "" },
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Ошибка создания"); return; }
+      setSaved(true);
+      setForm({ client_name: "", client_email: "", yacht_name: "", yacht_type: "", marina: "", country: "", dateFrom: "", dateTo: "", status: "new", notes: "" });
+      setTimeout(() => { setSaved(false); onCreated?.(); }, 1500);
+    } catch { setError("Ошибка соединения"); }
+    finally { setSaving(false); }
+  };
 
   return (
     <div className="space-y-5 animate-fade-in">
-      {saved && (
-        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm animate-fade-in">
-          <Icon name="CheckCircle" size={16} />
-          Бронирование создано успешно
-        </div>
-      )}
-      <div className="ocean-card rounded-2xl p-6 space-y-5">
+      {saved && <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm animate-fade-in"><Icon name="CheckCircle" size={16} />Бронирование создано! Переходим к списку...</div>}
+      {error && <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm animate-fade-in"><Icon name="AlertCircle" size={15} />{error}</div>}
+
+      <div className="ocean-card rounded-2xl p-6 space-y-4">
         <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Данные клиента</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
-            { key: "client", label: "Имя клиента", placeholder: "Иван Иванов" },
+            { key: "client_name", label: "Имя клиента", placeholder: "Иван Иванов", type: "text" },
+            { key: "client_email", label: "Email клиента", placeholder: "ivan@example.com", type: "email" },
           ].map((field) => (
-            <div key={field.key} className="md:col-span-2">
+            <div key={field.key}>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">{field.label}</label>
-              <input
-                className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
-                placeholder={field.placeholder}
-                value={form[field.key as keyof typeof form]}
-                onChange={(e) => set(field.key, e.target.value)}
-              />
+              <input type={field.type} className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+                placeholder={field.placeholder} value={form[field.key as keyof typeof form]} onChange={(e) => set(field.key, e.target.value)} />
             </div>
           ))}
         </div>
@@ -1271,39 +1318,31 @@ function ManagerCreateBooking() {
         <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Яхта и марина</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
-            { key: "yacht", label: "Название яхты", placeholder: "Beneteau Oceanis 51.1" },
+            { key: "yacht_name", label: "Название яхты *", placeholder: "Beneteau Oceanis 51.1" },
+            { key: "yacht_type", label: "Тип яхты", placeholder: "Парусная / Моторная" },
             { key: "marina", label: "Марина", placeholder: "ACI Marina Split" },
+            { key: "country", label: "Страна", placeholder: "Хорватия" },
           ].map((field) => (
             <div key={field.key}>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">{field.label}</label>
-              <input
-                className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
-                placeholder={field.placeholder}
-                value={form[field.key as keyof typeof form]}
-                onChange={(e) => set(field.key, e.target.value)}
-              />
+              <input className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+                placeholder={field.placeholder} value={form[field.key as keyof typeof form]} onChange={(e) => set(field.key, e.target.value)} />
             </div>
           ))}
         </div>
       </div>
 
       <div className="ocean-card rounded-2xl p-6 space-y-4">
-        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Даты и экипаж</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Даты</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
-            { key: "dateFrom", label: "Дата начала", placeholder: "14.07.2025", type: "date" },
-            { key: "dateTo", label: "Дата конца", placeholder: "21.07.2025", type: "date" },
-            { key: "crew", label: "Кол-во человек", placeholder: "4", type: "number" },
+            { key: "dateFrom", label: "Дата начала *", type: "date" },
+            { key: "dateTo", label: "Дата окончания *", type: "date" },
           ].map((field) => (
             <div key={field.key}>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">{field.label}</label>
-              <input
-                type={field.type || "text"}
-                className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
-                placeholder={field.placeholder}
-                value={form[field.key as keyof typeof form]}
-                onChange={(e) => set(field.key, e.target.value)}
-              />
+              <input type={field.type} className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
+                value={form[field.key as keyof typeof form]} onChange={(e) => set(field.key, e.target.value)} />
             </div>
           ))}
         </div>
@@ -1313,11 +1352,8 @@ function ManagerCreateBooking() {
         <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Статус и заметки</h3>
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1.5">Статус</label>
-          <select
-            className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] appearance-none"
-            value={form.status}
-            onChange={(e) => set("status", e.target.value)}
-          >
+          <select className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] appearance-none"
+            value={form.status} onChange={(e) => set("status", e.target.value)}>
             <option value="new">Новое</option>
             <option value="pending">Ожидает подтверждения</option>
             <option value="confirmed">Подтверждено</option>
@@ -1325,22 +1361,16 @@ function ManagerCreateBooking() {
         </div>
         <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1.5">Заметки</label>
-          <textarea
-            className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] resize-none"
-            rows={3}
-            placeholder="Пожелания клиента, особые условия..."
-            value={form.notes}
-            onChange={(e) => set("notes", e.target.value)}
-          />
+          <textarea className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] resize-none"
+            rows={3} placeholder="Пожелания клиента, особые условия..."
+            value={form.notes} onChange={(e) => set("notes", e.target.value)} />
         </div>
       </div>
 
-      <button
-        onClick={handleSave}
-        className="w-full bg-[hsl(213,70%,28%)] text-white py-3.5 rounded-2xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors flex items-center justify-center gap-2"
-      >
-        <Icon name="Plus" size={16} />
-        Создать бронирование
+      <button onClick={handleSave} disabled={saving}
+        className="w-full bg-[hsl(213,70%,28%)] text-white py-3.5 rounded-2xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
+        {saving ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="Plus" size={16} />}
+        {saving ? "Создаём..." : "Создать бронирование"}
       </button>
     </div>
   );
@@ -1702,8 +1732,8 @@ function ManagerPanel({ onLogout, managerName, isAdmin, token }: { onLogout: () 
   const renderSection = () => {
     switch (activeSection) {
       case "dashboard": return <ManagerDashboard setSection={setActiveSection} />;
-      case "bookings": return <ManagerBookingsList />;
-      case "create": return <ManagerCreateBooking />;
+      case "bookings": return <ManagerBookingsList token={token} />;
+      case "create": return <ManagerCreateBooking token={token} onCreated={() => setActiveSection("bookings")} />;
       case "clients": return <ManagerClients />;
       case "messages": return <MessagesSection />;
       case "my-contacts": return <ManagerMyContacts />;
@@ -1920,24 +1950,25 @@ const Index = () => {
   useEffect(() => {
     const token = localStorage.getItem("yc_token");
     const role = localStorage.getItem("yc_role");
-    if (token && role) {
-      // Быстрая проверка токена
-      const authUrl = role === "manager" ? `${API.authManager}/me` : `${API.bookings}/`;
-      fetch(authUrl, { headers: { "X-Auth-Token": token } })
-        .then(r => {
-          if (r.ok) {
-            return r.json().then(data => {
-              if (role === "manager") {
-                setUser({ token, name: data.name || "", email: data.email || "", role: "manager", is_admin: data.is_admin });
-                setScreen("manager-panel");
-              } else {
-                setUser({ token, name: "", email: "", role: "client" });
-                setScreen("client-bookings");
-              }
-            });
+    if (!token || !role) return;
+    if (role === "manager") {
+      // Проверяем через action=me (без sub-path)
+      fetch(API.authManager, {
+        method: "POST",
+        body: JSON.stringify({ action: "me" }),
+        headers: { "X-Auth-Token": token },
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data && data.email) {
+            setUser({ token, name: data.name || "", email: data.email, role: "manager", is_admin: data.is_admin });
+            setScreen("manager-panel");
           }
         })
         .catch(() => {});
+    } else {
+      setUser({ token, name: "", email: "", role: "client" });
+      setScreen("client-bookings");
     }
   }, []);
 

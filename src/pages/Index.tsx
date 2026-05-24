@@ -695,7 +695,6 @@ function ManagerLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => v
   const apiPost = async (payload: object) => {
     const res = await fetch(API.authManager, {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
       body: JSON.stringify(payload),
     });
     const text = await res.text();
@@ -868,7 +867,6 @@ function ClientLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => vo
     try {
       const res = await fetch(`${API.authClient}/send-otp`, {
         method: "POST",
-        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
@@ -887,7 +885,6 @@ function ClientLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => vo
     try {
       const res = await fetch(`${API.authClient}/verify-otp`, {
         method: "POST",
-        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({ email, code }),
       });
       const data = await res.json();

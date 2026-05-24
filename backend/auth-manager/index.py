@@ -335,13 +335,33 @@ def handler(event, context):
         }
 
     raw_body = event.get("body") or "{}"
+    is_base64 = event.get("isBase64Encoded", False)
+
     if isinstance(raw_body, str):
         try:
+            if is_base64:
+                import base64
+                raw_body = base64.b64decode(raw_body).decode("utf-8")
             body = json.loads(raw_body) if raw_body.strip() else {}
-        except json.JSONDecodeError:
-            return json_response(400, {"error": "Некорректный JSON"})
+        except Exception:
+            try:
+                import base64
+                decoded = base64.b64decode(raw_body + "==").decode("utf-8")
+                body = json.loads(decoded)
+            except Exception:
+                body = {}
     else:
         body = raw_body or {}
+
+    # Диагностика
+    if body.get("action") == "debug":
+        return json_response(200, {
+            "method": method,
+            "path": path,
+            "is_base64": is_base64,
+            "body": body,
+            "event_keys": list(event.keys()),
+        })
 
     # Определяем действие: по полю action в теле запроса
     action = body.get("action", "")

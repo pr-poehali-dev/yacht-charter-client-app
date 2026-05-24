@@ -1173,14 +1173,180 @@ function ManagerDashboard({ setSection }: { setSection: (s: ManagerSection) => v
 
 // ─── Manager Bookings List ────────────────────────────────────────────────────
 interface RealBooking {
-  id: number; yacht_name: string; yacht_type: string; marina: string; country: string;
-  date_from: string; date_to: string; status: string; client_name: string; notes: string;
+  id: number; yacht_name: string; yacht_type: string; marina: string; country: string; flag: string;
+  date_from: string; date_to: string; status: string; captain: string; cabins: number; berths: number;
+  length: string; engine: string; notes: string;
+  client_name: string; client_email: string; client_phone: string;
+  marina_address: string; marina_vhf: string; marina_phone: string; marina_email: string;
+  marina_checkin: string; marina_checkout: string; marina_coordinates: string;
+}
+
+// ─── Manager Edit Booking ─────────────────────────────────────────────────────
+function ManagerEditBooking({ booking, token, onBack, onSaved }: {
+  booking: RealBooking; token?: string; onBack: () => void; onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    client_name: booking.client_name || "", client_email: booking.client_email || "", client_phone: booking.client_phone || "",
+    yacht_name: booking.yacht_name || "", yacht_type: booking.yacht_type || "", flag: booking.flag || "",
+    captain: booking.captain || "", length: booking.length || "", engine: booking.engine || "",
+    cabins: booking.cabins ? String(booking.cabins) : "", berths: booking.berths ? String(booking.berths) : "",
+    marina: booking.marina || "", country: booking.country || "",
+    marina_address: booking.marina_address || "", marina_vhf: booking.marina_vhf || "",
+    marina_phone: booking.marina_phone || "", marina_email: booking.marina_email || "",
+    marina_checkin: booking.marina_checkin || "", marina_checkout: booking.marina_checkout || "",
+    marina_coordinates: booking.marina_coordinates || "",
+    date_from: booking.date_from ? booking.date_from.split("T")[0] : "",
+    date_to: booking.date_to ? booking.date_to.split("T")[0] : "",
+    status: booking.status || "new", notes: booking.notes || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = async () => {
+    setSaving(true); setError("");
+    try {
+      const t = token || localStorage.getItem("yc_token") || "";
+      const res = await fetch(`${API.bookings}?token=${t}`, {
+        method: "POST",
+        body: JSON.stringify({
+          _method: "PUT", id: booking.id,
+          ...form,
+          cabins: form.cabins ? Number(form.cabins) : null,
+          berths: form.berths ? Number(form.berths) : null,
+          date_from: form.date_from, date_to: form.date_to,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Ошибка сохранения"); return; }
+      setSaved(true);
+      setTimeout(() => { onSaved(); onBack(); }, 1200);
+    } catch { setError("Ошибка соединения"); }
+    finally { setSaving(false); }
+  };
+
+  const card = "ocean-card rounded-2xl p-6 space-y-4";
+  const cls2 = "grid grid-cols-1 md:grid-cols-2 gap-4";
+  const cls3 = "grid grid-cols-1 md:grid-cols-3 gap-4";
+  const inp = "w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent";
+
+  const F = ({ label, fkey, placeholder = "", type = "text" }: { label: string; fkey: string; placeholder?: string; type?: string }) => (
+    <div>
+      <label className="block text-xs font-medium text-muted-foreground mb-1.5">{label}</label>
+      <input type={type} className={inp} placeholder={placeholder}
+        value={form[fkey as keyof typeof form]} onChange={e => set(fkey, e.target.value)} />
+    </div>
+  );
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      {/* Шапка */}
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="w-9 h-9 rounded-xl bg-[hsl(199,60%,88%)] flex items-center justify-center hover:bg-[hsl(199,50%,80%)] transition-colors">
+          <Icon name="ArrowLeft" size={17} className="text-[hsl(213,70%,28%)]" />
+        </button>
+        <div>
+          <h2 className="font-display text-2xl font-semibold text-[hsl(213,80%,15%)]">{booking.yacht_name}</h2>
+          <p className="text-sm text-muted-foreground">{booking.client_name || "Клиент"}</p>
+        </div>
+        <div className="ml-auto"><MgrStatusBadge status={booking.status} /></div>
+      </div>
+
+      {saved && <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm animate-fade-in"><Icon name="CheckCircle" size={15} />Сохранено успешно!</div>}
+      {error && <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm animate-fade-in"><Icon name="AlertCircle" size={14} />{error}</div>}
+
+      {/* Клиент */}
+      <div className={card}>
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Данные клиента</h3>
+        <div className={cls3}>
+          <F label="Имя клиента" fkey="client_name" placeholder="Иван Иванов" />
+          <F label="Email" fkey="client_email" placeholder="ivan@example.com" type="email" />
+          <F label="Телефон" fkey="client_phone" placeholder="+7 916 000-00-00" />
+        </div>
+      </div>
+
+      {/* Яхта */}
+      <div className={card}>
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Данные яхты</h3>
+        <div className={cls2}>
+          <F label="Название яхты" fkey="yacht_name" placeholder="Beneteau Oceanis 51.1" />
+          <F label="Тип яхты" fkey="yacht_type" placeholder="Парусная яхта" />
+          <F label="Шкипер" fkey="captain" placeholder="Алексей Воронов" />
+          <F label="Длина" fkey="length" placeholder="15.3 м" />
+          <F label="Двигатель" fkey="engine" placeholder="2 × 57 л.с." />
+          <F label="Флаг" fkey="flag" placeholder="🇭🇷" />
+        </div>
+        <div className={cls3}>
+          <F label="Каюты" fkey="cabins" type="number" placeholder="4" />
+          <F label="Спальных мест" fkey="berths" type="number" placeholder="8" />
+          <F label="Страна" fkey="country" placeholder="Хорватия" />
+        </div>
+      </div>
+
+      {/* Марина */}
+      <div className={card}>
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Марина</h3>
+        <div className={cls2}>
+          <F label="Название марины" fkey="marina" placeholder="ACI Marina Split" />
+          <F label="Адрес" fkey="marina_address" placeholder="Uvala Baluni, 21000 Сплит" />
+          <F label="VHF канал" fkey="marina_vhf" placeholder="Channel 17" />
+          <F label="Телефон марины" fkey="marina_phone" placeholder="+385 21 398 548" />
+          <F label="Email марины" fkey="marina_email" type="email" placeholder="split@aci-club.hr" />
+          <F label="Координаты" fkey="marina_coordinates" placeholder="43°30′05″ N, 16°24′10″ E" />
+          <F label="Время заезда" fkey="marina_checkin" placeholder="14:00" />
+          <F label="Время выезда" fkey="marina_checkout" placeholder="09:00" />
+        </div>
+      </div>
+
+      {/* Даты */}
+      <div className={card}>
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Даты чартера</h3>
+        <div className={cls2}>
+          <F label="Дата начала" fkey="date_from" type="date" />
+          <F label="Дата окончания" fkey="date_to" type="date" />
+        </div>
+      </div>
+
+      {/* Статус и заметки */}
+      <div className={card}>
+        <h3 className="font-display text-xl font-semibold text-[hsl(213,80%,15%)]">Статус и заметки</h3>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1.5">Статус бронирования</label>
+          <select className={`${inp} appearance-none`} value={form.status} onChange={e => set("status", e.target.value)}>
+            <option value="new">Новое</option>
+            <option value="pending">Ожидает подтверждения</option>
+            <option value="confirmed">Подтверждено</option>
+            <option value="cancelled">Отменено</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1.5">Заметки</label>
+          <textarea className={`${inp} resize-none`} rows={3}
+            placeholder="Пожелания клиента, особые условия..."
+            value={form.notes} onChange={e => set("notes", e.target.value)} />
+        </div>
+      </div>
+
+      <div className="flex gap-3 pb-6">
+        <button onClick={onBack} className="flex-1 border-2 border-[hsl(213,70%,28%)] text-[hsl(213,70%,28%)] py-3 rounded-2xl font-semibold text-sm hover:bg-blue-50 transition-colors">
+          Отмена
+        </button>
+        <button onClick={handleSave} disabled={saving}
+          className="flex-1 bg-[hsl(213,70%,28%)] text-white py-3 rounded-2xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+          {saving ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="Save" size={16} />}
+          {saving ? "Сохраняем..." : "Сохранить изменения"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function ManagerBookingsList({ token }: { token?: string }) {
   const [filter, setFilter] = useState<"all" | "confirmed" | "pending" | "new">("all");
   const [bookings, setBookings] = useState<RealBooking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingBooking, setEditingBooking] = useState<RealBooking | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -1197,8 +1363,16 @@ function ManagerBookingsList({ token }: { token?: string }) {
 
   useEffect(() => { load(); }, [token]);
 
-  const filtered = filter === "all" ? bookings : bookings.filter(b => b.status === filter);
+  if (editingBooking) return (
+    <ManagerEditBooking
+      booking={editingBooking}
+      token={token}
+      onBack={() => setEditingBooking(null)}
+      onSaved={load}
+    />
+  );
 
+  const filtered = filter === "all" ? bookings : bookings.filter(b => b.status === filter);
   const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString("ru", { day: "numeric", month: "short", year: "numeric" }) : "—";
 
   return (
@@ -1229,16 +1403,22 @@ function ManagerBookingsList({ token }: { token?: string }) {
             <div key={b.id} className="ocean-card rounded-2xl p-5 animate-fade-in" style={{ animationDelay: `${idx * 0.07}s` }}>
               <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
                 <div>
-                  <p className="font-semibold text-[hsl(213,80%,15%)]">{b.client_name || "Клиент"}</p>
+                  <p className="font-semibold text-[hsl(213,80%,15%)]">
+                    {b.flag && <span className="mr-1">{b.flag}</span>}
+                    {b.client_name || "Клиент"}
+                  </p>
                   <p className="text-sm text-muted-foreground">{b.yacht_name}{b.yacht_type ? ` · ${b.yacht_type}` : ""}</p>
                 </div>
                 <MgrStatusBadge status={b.status} />
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                 {[
                   { icon: "MapPin", val: b.marina || "—" },
                   { icon: "Calendar", val: `${fmtDate(b.date_from)} — ${fmtDate(b.date_to)}` },
                   { icon: "Globe", val: b.country || "—" },
+                  { icon: "User", val: b.captain || "—" },
+                  { icon: "BedDouble", val: b.cabins ? `${b.cabins} кают / ${b.berths || "?"} мест` : "—" },
+                  { icon: "Phone", val: b.client_phone || b.client_email || "—" },
                 ].map((item) => (
                   <span key={item.icon} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Icon name={item.icon} size={12} className="text-[hsl(199,65%,45%)] flex-shrink-0" />
@@ -1249,6 +1429,13 @@ function ManagerBookingsList({ token }: { token?: string }) {
               {b.notes && (
                 <p className="text-xs text-muted-foreground bg-blue-50 rounded-lg px-3 py-2 mb-3 line-clamp-2">{b.notes}</p>
               )}
+              <button
+                onClick={() => setEditingBooking(b)}
+                className="w-full flex items-center justify-center gap-2 border-2 border-[hsl(213,70%,28%)] text-[hsl(213,70%,28%)] py-2.5 rounded-xl text-sm font-semibold hover:bg-[hsl(213,70%,28%)] hover:text-white transition-all"
+              >
+                <Icon name="Pencil" size={14} />
+                Открыть и редактировать
+              </button>
             </div>
           ))}
         </div>

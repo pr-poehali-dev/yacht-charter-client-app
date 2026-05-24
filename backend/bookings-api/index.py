@@ -284,6 +284,67 @@ def handler(event, context):
 
             return handle_create_booking(body, session, conn)
 
+        # PUT — обновление бронирования
+        if method == "PUT" or (method == "POST" and body.get("_method") == "PUT"):
+            if session["role"] != "manager":
+                return json_response(403, {"error": "Доступ запрещён"})
+            booking_id = body.get("id")
+            if not booking_id:
+                return json_response(400, {"error": "Не передан id бронирования"})
+
+            fields = [
+                ("yacht_name", body.get("yacht_name")),
+                ("yacht_type", body.get("yacht_type")),
+                ("captain", body.get("captain")),
+                ("length", body.get("length")),
+                ("engine", body.get("engine")),
+                ("flag", body.get("flag")),
+                ("cabins", body.get("cabins")),
+                ("berths", body.get("berths")),
+                ("marina", body.get("marina")),
+                ("country", body.get("country")),
+                ("marina_address", body.get("marina_address")),
+                ("marina_vhf", body.get("marina_vhf")),
+                ("marina_phone", body.get("marina_phone")),
+                ("marina_email", body.get("marina_email")),
+                ("marina_checkin", body.get("marina_checkin")),
+                ("marina_checkout", body.get("marina_checkout")),
+                ("marina_coordinates", body.get("marina_coordinates")),
+                ("date_from", body.get("date_from")),
+                ("date_to", body.get("date_to")),
+                ("status", body.get("status")),
+                ("notes", body.get("notes")),
+            ]
+            updates = [(k, v) for k, v in fields if v is not None]
+            if not updates:
+                return json_response(400, {"error": "Нет полей для обновления"})
+
+            set_clause = ", ".join([f"{k} = %s" for k, _ in updates])
+            values = [v for _, v in updates] + [booking_id]
+            cur = conn.cursor()
+            cur.execute(f"UPDATE bookings SET {set_clause} WHERE id = %s", values)
+
+            # Обновляем клиента если переданы данные
+            client_name = body.get("client_name")
+            client_phone = body.get("client_phone")
+            client_email = body.get("client_email")
+            if any([client_name, client_phone, client_email]):
+                cur.execute("SELECT client_id FROM bookings WHERE id = %s", [booking_id])
+                cid_row = cur.fetchone()
+                if cid_row and cid_row[0]:
+                    cid = cid_row[0]
+                    client_updates = []
+                    client_vals = []
+                    if client_name: client_updates.append("name = %s"); client_vals.append(client_name)
+                    if client_phone: client_updates.append("phone = %s"); client_vals.append(client_phone)
+                    if client_email: client_updates.append("email = %s"); client_vals.append(client_email)
+                    if client_updates:
+                        cur.execute(f"UPDATE clients SET {', '.join(client_updates)} WHERE id = %s", client_vals + [cid])
+
+            conn.commit()
+            cur.close()
+            return json_response(200, {"ok": True})
+
         return json_response(404, {"error": "Маршрут не найден"})
 
     except Exception as e:

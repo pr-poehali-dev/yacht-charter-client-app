@@ -20,8 +20,9 @@ MAIN_DB_SCHEMA = os.environ["MAIN_DB_SCHEMA"]
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Auth-Token",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Auth-Token, Authorization, X-Requested-With",
+    "Access-Control-Max-Age": "86400",
     "Content-Type": "application/json",
 }
 
@@ -319,8 +320,8 @@ def handler(event, context):
       POST /login   | action=login — вход по email и паролю, возвращает токен сессии
       GET  /me      | action=me    — получение данных текущего менеджера по токену
     """
-    method = event.get("method", "GET").upper()
-    path = event.get("path", "/").rstrip("/") or "/"
+    method = (event.get("httpMethod") or event.get("method") or "POST").upper()
+    path = (event.get("path") or "/").rstrip("/") or "/"
     headers = event.get("headers") or {}
 
     # Нормализуем заголовки к нижнему регистру для единообразия
@@ -328,9 +329,9 @@ def handler(event, context):
 
     if method == "OPTIONS":
         return {
-            "statusCode": 204,
+            "statusCode": 200,
             "headers": CORS_HEADERS,
-            "body": "",
+            "body": "{}",
         }
 
     raw_body = event.get("body") or "{}"

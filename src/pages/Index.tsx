@@ -692,21 +692,26 @@ function ManagerLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => v
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const apiPost = async (payload: object) => {
+    const res = await fetch(API.authManager, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(payload),
+    });
+    const text = await res.text();
+    return { ok: res.ok, data: JSON.parse(text) };
+  };
+
   const handleLogin = async () => {
     if (!email || !password) { setError("Заполните все поля"); return; }
     setLoading(true); setError("");
     try {
-      const res = await fetch(API.authManager, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "login", email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || "Неверный email или пароль"); return; }
+      const { ok, data } = await apiPost({ action: "login", email, password });
+      if (!ok) { setError(data.error || "Неверный email или пароль"); return; }
       localStorage.setItem("yc_token", data.token);
       localStorage.setItem("yc_role", "manager");
       onSuccess({ ...data, role: "manager" });
-    } catch {
+    } catch (e) {
       setError("Ошибка соединения. Попробуйте ещё раз.");
     } finally { setLoading(false); }
   };
@@ -715,11 +720,7 @@ function ManagerLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => v
     if (!email) { setError("Введите email"); return; }
     setLoading(true); setError("");
     try {
-      await fetch(API.authManager, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "forgot-password", email }),
-      });
+      await apiPost({ action: "forgot-password", email });
       setSuccess("Если этот email зарегистрирован — письмо с кодом уже в пути.");
       setMode("reset");
     } catch {
@@ -732,18 +733,11 @@ function ManagerLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => v
     if (newPassword.length < 8) { setError("Пароль минимум 8 символов"); return; }
     setLoading(true); setError("");
     try {
-      const res = await fetch(API.authManager, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "reset-password", email, code: resetCode, new_password: newPassword }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || "Неверный код"); return; }
+      const { ok, data } = await apiPost({ action: "reset-password", email, code: resetCode, new_password: newPassword });
+      if (!ok) { setError(data.error || "Неверный код"); return; }
       setSuccess("Пароль успешно изменён! Теперь войдите с новым паролем.");
       setMode("login");
-      setPassword("");
-      setResetCode("");
-      setNewPassword("");
+      setPassword(""); setResetCode(""); setNewPassword("");
     } catch {
       setError("Ошибка соединения.");
     } finally { setLoading(false); }
@@ -874,7 +868,7 @@ function ClientLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => vo
     try {
       const res = await fetch(`${API.authClient}/send-otp`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
@@ -893,7 +887,7 @@ function ClientLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => vo
     try {
       const res = await fetch(`${API.authClient}/verify-otp`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({ email, code }),
       });
       const data = await res.json();

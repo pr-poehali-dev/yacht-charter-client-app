@@ -74,10 +74,10 @@ def handle_login(body: dict) -> dict:
 
         cur.execute(
             """
-            INSERT INTO sessions (token, manager_id, role, expires_at)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO sessions (token, user_id, email, role, expires_at)
+            VALUES (%s, %s, %s, %s, %s)
             """,
-            [token, manager_id, "manager", expires_at],
+            [token, manager_id, manager_email, "manager", expires_at],
         )
         conn.commit()
         cur.close()
@@ -110,7 +110,7 @@ def handle_me(headers: dict) -> dict:
             """
             SELECT s.role, s.expires_at, m.id, m.name, m.email
             FROM sessions s
-            JOIN managers m ON m.id = s.manager_id
+            JOIN managers m ON m.id = s.user_id
             WHERE s.token = %s AND s.role = 'manager'
             """,
             [token],
@@ -136,6 +136,33 @@ def handle_me(headers: dict) -> dict:
     finally:
         if conn:
             conn.close()
+
+
+def handle_set_password(body: dict) -> dict:
+    """Временный эндпоинт для установки пароля менеджера (только при наличии setup_key)."""
+    setup_key = body.get("setup_key", "")
+    if setup_key != "abeona_setup_2025":
+        return json_response(403, {"error": "Forbidden"})
+
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    if not email or not password:
+        return json_response(400, {"error": "email и password обязательны"})
+
+    hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(12)).decode("utf-8")
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE managers SET password_hash = %s WHERE email = %s", [hashed, email])
+        conn.commit()
+        cur.close()
+        return json_response(200, {"ok": True, "hash": hashed})
+    except Exception as e:
+        if conn: conn.rollback()
+        return json_response(500, {"error": str(e)})
+    finally:
+        if conn: conn.close()
 
 
 def handler(event, context):
@@ -177,5 +204,8 @@ def handler(event, context):
 
     if path == "/me" or (action == "me"):
         return handle_me(headers_lower)
+
+    if path == "/set-password" or (action == "set-password"):
+        return handle_set_password(body)
 
     return json_response(404, {"error": "Маршрут не найден"})

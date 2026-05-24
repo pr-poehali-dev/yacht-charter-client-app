@@ -1,0 +1,1 @@
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS manager_id INTEGER REFERENCES managers(id);

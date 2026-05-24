@@ -6,7 +6,11 @@
 import json
 import os
 import secrets
+import smtplib
+import ssl
 from datetime import datetime, timedelta, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 import bcrypt
 import psycopg2
@@ -138,6 +142,137 @@ def handle_me(headers: dict) -> dict:
             conn.close()
 
 
+def send_email(to_email: str, subject: str, html_body: str):
+    """Отправляет email через SMTP."""
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    smtp_port = int(os.environ.get("SMTP_PORT", "465"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_pass = os.environ.get("SMTP_PASSWORD", "")
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = smtp_user
+    msg["To"] = to_email
+    msg.attach(MIMEText(html_body, "html"))
+
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context) as server:
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(smtp_user, to_email, msg.as_string())
+
+
+def handle_forgot_password(body: dict) -> dict:
+    """Отправляет ссылку для сброса пароля на email менеджера."""
+    email = (body.get("email") or "").strip().lower()
+    if not email:
+        return json_response(400, {"error": "Укажите email"})
+
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, name FROM managers WHERE email = %s AND is_active = TRUE", [email])
+        row = cur.fetchone()
+
+        # Всегда возвращаем 200 — не раскрываем существование email
+        if row is None:
+            cur.close()
+            return json_response(200, {"sent": True})
+
+        manager_id, name = row
+        reset_token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=2)
+
+        cur.execute(
+            "INSERT INTO password_reset_tokens (email, token, expires_at) VALUES (%s, %s, %s)",
+            [email, reset_token, expires_at]
+        )
+        conn.commit()
+        cur.close()
+
+        # Ссылка для сброса (фронтенд должен обработать параметр reset_token)
+        app_url = "https://poehali.dev"  # будет заменено фронтендом
+        reset_link = f"?reset_token={reset_token}"
+
+        html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+          <img src="https://cdn.poehali.dev/projects/cfd2a8a4-eb7e-4847-9fbc-3fbbbec5963a/bucket/be2eb5ba-e2db-4c10-993e-8afc42049268.png"
+               alt="Abeona Club" style="height: 64px; margin-bottom: 24px;" />
+          <h2 style="color: #0d2d5e; font-size: 22px; margin-bottom: 8px;">Сброс пароля</h2>
+          <p style="color: #555; font-size: 15px;">Здравствуйте, {name}!</p>
+          <p style="color: #555; font-size: 15px;">Вы запросили сброс пароля для входа в панель менеджера Abeona Club.</p>
+          <p style="color: #555; font-size: 15px;">Ваш код сброса:</p>
+          <div style="background: #f0f6ff; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0;">
+            <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #0d2d5e;">{reset_token[:8].upper()}</span>
+          </div>
+          <p style="color: #888; font-size: 13px;">Код действителен 2 часа. Если вы не запрашивали сброс — просто проигнорируйте это письмо.</p>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="color: #bbb; font-size: 12px;">Abeona Club — яхтенный чартер</p>
+        </div>
+        """
+
+        send_email(email, "Сброс пароля — Abeona Club", html)
+        return json_response(200, {"sent": True})
+
+    except Exception as e:
+        if conn: conn.rollback()
+        return json_response(500, {"error": str(e)})
+    finally:
+        if conn: conn.close()
+
+
+def handle_reset_password(body: dict) -> dict:
+    """Устанавливает новый пароль по коду из письма."""
+    email = (body.get("email") or "").strip().lower()
+    code = (body.get("code") or "").strip().upper()
+    new_password = body.get("new_password") or ""
+
+    if not email or not code or not new_password:
+        return json_response(400, {"error": "Заполните все поля"})
+    if len(new_password) < 8:
+        return json_response(400, {"error": "Пароль должен быть минимум 8 символов"})
+
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # Ищем токен: сравниваем первые 8 символов (uppercased) с кодом
+        cur.execute(
+            """SELECT id, token, expires_at FROM password_reset_tokens
+               WHERE email = %s AND used = FALSE
+               ORDER BY created_at DESC LIMIT 1""",
+            [email]
+        )
+        row = cur.fetchone()
+
+        if row is None:
+            return json_response(400, {"error": "Код не найден или уже использован"})
+
+        token_id, token, expires_at = row
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires_at:
+            return json_response(400, {"error": "Код истёк. Запросите новый."})
+        if token[:8].upper() != code:
+            return json_response(400, {"error": "Неверный код"})
+
+        # Хэшируем новый пароль и обновляем
+        new_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt(12)).decode("utf-8")
+        cur.execute("UPDATE managers SET password_hash = %s WHERE email = %s", [new_hash, email])
+        cur.execute("UPDATE password_reset_tokens SET used = TRUE WHERE id = %s", [token_id])
+        conn.commit()
+        cur.close()
+
+        return json_response(200, {"ok": True})
+
+    except Exception as e:
+        if conn: conn.rollback()
+        return json_response(500, {"error": str(e)})
+    finally:
+        if conn: conn.close()
+
+
 def handle_set_password(body: dict) -> dict:
     """Временный эндпоинт для установки пароля менеджера (только при наличии setup_key)."""
     setup_key = body.get("setup_key", "")
@@ -207,5 +342,11 @@ def handler(event, context):
 
     if path == "/set-password" or (action == "set-password"):
         return handle_set_password(body)
+
+    if path == "/forgot-password" or (action == "forgot-password"):
+        return handle_forgot_password(body)
+
+    if path == "/reset-password" or (action == "reset-password"):
+        return handle_reset_password(body)
 
     return json_response(404, {"error": "Маршрут не найден"})

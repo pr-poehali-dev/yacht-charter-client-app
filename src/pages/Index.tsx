@@ -683,19 +683,23 @@ function ContactsSection() {
 
 // ─── Auth: Manager Login ──────────────────────────────────────────────────────
 function ManagerLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => void }) {
+  const [mode, setMode] = useState<"login" | "forgot" | "reset">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const handleLogin = async () => {
     if (!email || !password) { setError("Заполните все поля"); return; }
     setLoading(true); setError("");
     try {
-      const res = await fetch(`${API.authManager}/login`, {
+      const res = await fetch(API.authManager, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ action: "login", email, password }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Неверный email или пароль"); return; }
@@ -704,63 +708,149 @@ function ManagerLoginScreen({ onSuccess }: { onSuccess: (user: SessionUser) => v
       onSuccess({ ...data, role: "manager" });
     } catch {
       setError("Ошибка соединения. Попробуйте ещё раз.");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
+
+  const handleForgot = async () => {
+    if (!email) { setError("Введите email"); return; }
+    setLoading(true); setError("");
+    try {
+      await fetch(API.authManager, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "forgot-password", email }),
+      });
+      setSuccess("Если этот email зарегистрирован — письмо с кодом уже в пути.");
+      setMode("reset");
+    } catch {
+      setError("Ошибка соединения.");
+    } finally { setLoading(false); }
+  };
+
+  const handleReset = async () => {
+    if (!resetCode || !newPassword) { setError("Заполните все поля"); return; }
+    if (newPassword.length < 8) { setError("Пароль минимум 8 символов"); return; }
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(API.authManager, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset-password", email, code: resetCode, new_password: newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Неверный код"); return; }
+      setSuccess("Пароль успешно изменён! Теперь войдите с новым паролем.");
+      setMode("login");
+      setPassword("");
+      setResetCode("");
+      setNewPassword("");
+    } catch {
+      setError("Ошибка соединения.");
+    } finally { setLoading(false); }
+  };
+
+  const waveBg = (
+    <div className="absolute inset-0 pointer-events-none opacity-10">
+      <svg viewBox="0 0 1440 200" className="absolute bottom-0 w-full" fill="white" preserveAspectRatio="none">
+        <path d="M0,80 C360,140 720,20 1080,80 C1260,110 1380,50 1440,80 L1440,200 L0,200 Z" />
+      </svg>
+    </div>
+  );
+
+  const inputCls = "w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent";
+  const btnCls = "w-full bg-[hsl(213,70%,28%)] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors disabled:opacity-60 flex items-center justify-center gap-2 mt-2";
 
   return (
     <div className="min-h-screen wave-bg flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute inset-0 pointer-events-none opacity-10">
-        <svg viewBox="0 0 1440 200" className="absolute bottom-0 w-full" fill="white" preserveAspectRatio="none">
-          <path d="M0,80 C360,140 720,20 1080,80 C1260,110 1380,50 1440,80 L1440,200 L0,200 Z" />
-        </svg>
-      </div>
+      {waveBg}
       <div className="relative z-10 w-full max-w-md animate-fade-in">
         <div className="text-center mb-8">
           <img src={LOGO_URL} alt="Abeona Club" className="w-24 h-24 object-contain mx-auto mb-3 drop-shadow-lg" />
           <p className="text-blue-200 text-sm">Вход для менеджеров</p>
         </div>
         <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-8 shadow-2xl">
-          <h2 className="font-display text-2xl font-semibold text-[hsl(213,80%,15%)] mb-6">Добро пожаловать</h2>
-          {error && (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm mb-4 animate-fade-in">
-              <Icon name="AlertCircle" size={15} className="flex-shrink-0" />
-              {error}
-            </div>
+
+          {/* Режим: вход */}
+          {mode === "login" && (
+            <>
+              <h2 className="font-display text-2xl font-semibold text-[hsl(213,80%,15%)] mb-6">Добро пожаловать</h2>
+              {success && <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm mb-4 animate-fade-in"><Icon name="CheckCircle" size={15} />{success}</div>}
+              {error && <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm mb-4 animate-fade-in"><Icon name="AlertCircle" size={15} className="flex-shrink-0" />{error}</div>}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">Email</label>
+                  <input type="email" className={inputCls} placeholder="tatiana@abeona.club" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-medium text-muted-foreground">Пароль</label>
+                    <button onClick={() => { setMode("forgot"); setError(""); setSuccess(""); }} className="text-xs text-[hsl(199,65%,45%)] hover:underline">Забыли пароль?</button>
+                  </div>
+                  <input type="password" className={inputCls} placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleLogin()} />
+                </div>
+                <button onClick={handleLogin} disabled={loading} className={btnCls}>
+                  {loading ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="LogIn" size={16} />}
+                  {loading ? "Вход..." : "Войти"}
+                </button>
+              </div>
+            </>
           )}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Email</label>
-              <input
-                type="email"
-                className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
-                placeholder="manager@company.ru"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleLogin()}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">Пароль</label>
-              <input
-                type="password"
-                className="w-full bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[hsl(199,65%,45%)] focus:border-transparent"
-                placeholder="••••••••"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleLogin()}
-              />
-            </div>
-            <button
-              onClick={handleLogin}
-              disabled={loading}
-              className="w-full bg-[hsl(213,70%,28%)] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[hsl(213,80%,20%)] transition-colors disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
-            >
-              {loading ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="LogIn" size={16} />}
-              {loading ? "Вход..." : "Войти"}
-            </button>
-          </div>
+
+          {/* Режим: запрос кода */}
+          {mode === "forgot" && (
+            <>
+              <button onClick={() => { setMode("login"); setError(""); }} className="flex items-center gap-1.5 text-xs text-muted-foreground mb-5 hover:text-[hsl(213,70%,28%)] transition-colors">
+                <Icon name="ArrowLeft" size={13} /> Назад
+              </button>
+              <h2 className="font-display text-2xl font-semibold text-[hsl(213,80%,15%)] mb-2">Сброс пароля</h2>
+              <p className="text-sm text-muted-foreground mb-5">Введите ваш email — мы отправим код для создания нового пароля.</p>
+              {error && <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm mb-4 animate-fade-in"><Icon name="AlertCircle" size={15} />{error}</div>}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">Email</label>
+                  <input type="email" className={inputCls} placeholder="tatiana@abeona.club" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleForgot()} />
+                </div>
+                <button onClick={handleForgot} disabled={loading} className={btnCls}>
+                  {loading ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="Mail" size={16} />}
+                  {loading ? "Отправляем..." : "Отправить код"}
+                </button>
+                <button onClick={() => { setMode("reset"); setError(""); }} className="w-full text-xs text-muted-foreground hover:text-[hsl(213,70%,28%)] transition-colors py-1">
+                  Уже есть код? Ввести →
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Режим: новый пароль */}
+          {mode === "reset" && (
+            <>
+              <button onClick={() => { setMode("forgot"); setError(""); setSuccess(""); }} className="flex items-center gap-1.5 text-xs text-muted-foreground mb-5 hover:text-[hsl(213,70%,28%)] transition-colors">
+                <Icon name="ArrowLeft" size={13} /> Назад
+              </button>
+              <h2 className="font-display text-2xl font-semibold text-[hsl(213,80%,15%)] mb-2">Новый пароль</h2>
+              {success && <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-sm mb-4 animate-fade-in"><Icon name="CheckCircle" size={15} />{success}</div>}
+              {error && <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm mb-4 animate-fade-in"><Icon name="AlertCircle" size={15} />{error}</div>}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">Email</label>
+                  <input type="email" className={inputCls} placeholder="tatiana@abeona.club" value={email} onChange={e => setEmail(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">Код из письма (первые 8 символов)</label>
+                  <input type="text" maxLength={8} className={`${inputCls} uppercase tracking-widest text-center text-lg font-bold`} placeholder="XXXXXXXX" value={resetCode} onChange={e => setResetCode(e.target.value.toUpperCase())} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">Новый пароль</label>
+                  <input type="password" className={inputCls} placeholder="Минимум 8 символов" value={newPassword} onChange={e => setNewPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleReset()} />
+                </div>
+                <button onClick={handleReset} disabled={loading} className={btnCls}>
+                  {loading ? <Icon name="Loader" size={16} className="animate-spin" /> : <Icon name="KeyRound" size={16} />}
+                  {loading ? "Сохраняем..." : "Сохранить новый пароль"}
+                </button>
+              </div>
+            </>
+          )}
+
         </div>
         <p className="text-center text-blue-300 text-xs mt-6">
           Вы клиент? <button className="text-[hsl(45,85%,65%)] underline" onClick={() => window.location.reload()}>Перейти ко входу для клиентов</button>

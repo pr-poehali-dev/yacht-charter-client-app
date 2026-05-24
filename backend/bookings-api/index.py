@@ -345,6 +345,109 @@ def handler(event, context):
             cur.close()
             return json_response(200, {"ok": True})
 
+        # DELETE бронирования
+        if method == "DELETE" or (method == "POST" and body.get("_method") == "DELETE" and body.get("_target") == "booking"):
+            if session["role"] != "manager":
+                return json_response(403, {"error": "Доступ запрещён"})
+            booking_id = body.get("id")
+            if not booking_id:
+                return json_response(400, {"error": "Не передан id"})
+            cur = conn.cursor()
+            cur.execute("DELETE FROM reminders WHERE booking_id = %s", [booking_id])
+            cur.execute("DELETE FROM crew_members WHERE booking_id = %s", [booking_id])
+            cur.execute("DELETE FROM payments WHERE booking_id = %s", [booking_id])
+            cur.execute("DELETE FROM bookings WHERE id = %s", [booking_id])
+            conn.commit()
+            cur.close()
+            return json_response(200, {"ok": True})
+
+        # GET /clients — список клиентов
+        if path == "/clients" or (method == "GET" and body.get("_action") == "list-clients"):
+            if session["role"] != "manager":
+                return json_response(403, {"error": "Доступ запрещён"})
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT c.id, c.name, c.email, c.phone, c.created_at,
+                       COUNT(b.id) AS booking_count
+                FROM clients c
+                LEFT JOIN bookings b ON b.client_id = c.id
+                GROUP BY c.id ORDER BY c.created_at DESC
+            """)
+            rows = cur.fetchall()
+            cols = [d[0] for d in cur.description]
+            cur.close()
+            return json_response(200, {"clients": [dict(zip(cols, r)) for r in rows]})
+
+        # POST /clients — создать клиента
+        if path == "/clients" and method == "POST" or (method == "POST" and body.get("_action") == "create-client"):
+            if session["role"] != "manager":
+                return json_response(403, {"error": "Доступ запрещён"})
+            name = (body.get("name") or "").strip()
+            email = (body.get("email") or "").strip().lower()
+            phone = (body.get("phone") or "").strip()
+            notes = (body.get("notes") or "").strip()
+            if not name:
+                return json_response(400, {"error": "Имя обязательно"})
+            if not email:
+                return json_response(400, {"error": "Email обязателен"})
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM clients WHERE email = %s", [email])
+            if cur.fetchone():
+                return json_response(400, {"error": "Клиент с таким email уже существует"})
+            cur.execute(
+                "INSERT INTO clients (name, email, phone) VALUES (%s, %s, %s) RETURNING id, name, email, phone, created_at",
+                [name, email, phone or None]
+            )
+            row = cur.fetchone()
+            cols = [d[0] for d in cur.description]
+            conn.commit()
+            cur.close()
+            return json_response(201, dict(zip(cols, row)))
+
+        # PUT /clients — обновить клиента
+        if method == "POST" and body.get("_action") == "update-client":
+            if session["role"] != "manager":
+                return json_response(403, {"error": "Доступ запрещён"})
+            client_id = body.get("id")
+            if not client_id:
+                return json_response(400, {"error": "Не передан id клиента"})
+            fields = [("name", body.get("name")), ("email", body.get("email")), ("phone", body.get("phone"))]
+            updates = [(k, v) for k, v in fields if v is not None]
+            if not updates:
+                return json_response(400, {"error": "Нет данных для обновления"})
+            set_clause = ", ".join([f"{k} = %s" for k, _ in updates])
+            values = [v for _, v in updates] + [client_id]
+            cur = conn.cursor()
+            cur.execute(f"UPDATE clients SET {set_clause} WHERE id = %s RETURNING id, name, email, phone", values)
+            row = cur.fetchone()
+            cols = [d[0] for d in cur.description]
+            conn.commit()
+            cur.close()
+            return json_response(200, dict(zip(cols, row)))
+
+        # DELETE /clients — удалить клиента и все его бронирования
+        if method == "POST" and body.get("_action") == "delete-client":
+            if session["role"] != "manager":
+                return json_response(403, {"error": "Доступ запрещён"})
+            client_id = body.get("id")
+            if not client_id:
+                return json_response(400, {"error": "Не передан id клиента"})
+            cur = conn.cursor()
+            # Удаляем все связанные записи бронирований клиента
+            cur.execute("SELECT id FROM bookings WHERE client_id = %s", [client_id])
+            bids = [r[0] for r in cur.fetchall()]
+            for bid in bids:
+                cur.execute("DELETE FROM reminders WHERE booking_id = %s", [bid])
+                cur.execute("DELETE FROM crew_members WHERE booking_id = %s", [bid])
+                cur.execute("DELETE FROM payments WHERE booking_id = %s", [bid])
+            if bids:
+                cur.execute("DELETE FROM bookings WHERE client_id = %s", [client_id])
+            cur.execute("DELETE FROM sessions WHERE role = 'client' AND user_id = %s", [client_id])
+            cur.execute("DELETE FROM clients WHERE id = %s", [client_id])
+            conn.commit()
+            cur.close()
+            return json_response(200, {"ok": True})
+
         return json_response(404, {"error": "Маршрут не найден"})
 
     except Exception as e:
